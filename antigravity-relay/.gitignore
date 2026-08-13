@@ -1,0 +1,11 @@
+# Rust target build output
+/target/
+
+# Local data & credentials
+/accounts/
+*.log
+*.db
+
+# OS files
+.DS_Store
+Thumbs.db

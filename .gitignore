@@ -1,0 +1,47 @@
+# Rust Build Artifacts
+**/target/
+target/
+
+# Sensitive Account Data & Local Storage
+**/accounts/
+accounts/
+**/.antigravity-relay/
+.antigravity-relay/
+**/data/
+data/
+*.db
+*.vscdb
+*.log
+
+# Environment & Secret Files
+.env
+.env.*
+*.pem
+*.key
+
+# Compiled Binaries & Packages
+*.exe
+*.dll
+*.so
+*.dylib
+*.deb
+*.rpm
+*.AppImage
+*.dmg
+dist/
+build/
+
+# IDE & Editor Configurations
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Operating System Files
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Reference Material (Optional)
+docs/reference/
+docs/analyse/
