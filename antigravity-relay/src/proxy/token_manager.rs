@@ -36,24 +36,10 @@ impl TokenManager {
             }
         }
 
-        let keyring_cred = crate::storage::KeyringSync::get_keyring_credential();
-
         let mut list = self.accounts.write().await;
         for acc in list.iter_mut() {
             if let Some(ref email) = disk_email {
-                acc.is_active = (acc.email == *email);
-            }
-            if acc.is_active {
-                if let Some((ref new_access, ref new_refresh)) = keyring_cred {
-                    if !new_access.is_empty() && acc.access_token != *new_access {
-                        acc.access_token = new_access.clone();
-                        if let Some(r) = new_refresh {
-                            acc.refresh_token = r.clone();
-                        }
-                        let _ = self.store.save(acc);
-                        tracing::info!("[TokenManager] 🔄 Automatically captured fresh token from agy login for {}", acc.email);
-                    }
-                }
+                acc.is_active = acc.email == *email;
             }
         }
     }
