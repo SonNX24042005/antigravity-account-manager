@@ -16,13 +16,17 @@ Hệ thống quản trị đa tài khoản Google và bộ chuyển đổi tài 
 
 ## Cài đặt và sử dụng
 
-### 1. Cài đặt nhanh 1 dòng lệnh
+### 1. Cài đặt nhanh 1 dòng lệnh (không cần clone repo)
+
+Tương tự như `claude code` hay `rustup`, bạn có thể cài đặt ngay lập tức ở bất kỳ máy nào bằng 1 lệnh curl:
 
 ```bash
-./install.sh
+curl -fsSL https://raw.githubusercontent.com/SonNX24042005/antigravity-account-manager/main/install.sh | bash
 ```
 
-Lệnh này sẽ tự động biên dịch và tạo lệnh điều khiển toàn cục **`agyr`** (và `antigravity-relay`) trong `~/.local/bin`. Bạn có thể gõ `agyr` ở bất kỳ thư mục nào trong terminal.
+*(Hoặc nếu đã tải mã nguồn về máy, bạn có thể chạy trực tiếp `./install.sh`)*
+
+Lệnh này sẽ tự động tải hoặc biên dịch và cài đặt lệnh điều khiển toàn cục **`agyr`** (và `antigravity-relay`) vào `~/.local/bin/`. Sau khi cài, bạn có thể gõ `agyr` ở bất kỳ thư mục nào trong terminal.
 
 ### 2. Các tùy chọn khởi chạy
 
