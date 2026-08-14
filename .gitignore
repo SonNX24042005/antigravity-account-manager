@@ -1,25 +1,53 @@
+# ==============================================================================
+#  Antigravity Account Manager - Git Ignore Configuration
+# ==============================================================================
+
 # Rust Build Artifacts
-**/target/
 target/
+**/target/
+Cargo.lock.backup
+*.profraw
+*.profdata
+lcov.info
 
 # Sensitive Account Data & Local Storage
 **/accounts/
 accounts/
 **/.antigravity-relay/
 .antigravity-relay/
+**/.antigravity/
+.antigravity/
 **/data/
 data/
 *.db
+*.db-shm
+*.db-wal
+*.sqlite
+*.sqlite3
 *.vscdb
 *.log
+*.log.*
 
 # Environment & Secret Files
 .env
 .env.*
 *.pem
 *.key
+*.crt
+*.pfx
+*.p12
 
-# Compiled Binaries & Packages
+# Compressed Archives & Package Outputs
+*.tar.gz
+*.tgz
+*.zip
+*.7z
+*.rar
+package/
+dist/
+build/
+
+# Compiled Binaries & Native Libraries
 *.exe
 *.dll
 *.so
@@ -28,25 +56,33 @@ data/
 *.rpm
 *.AppImage
 *.dmg
-dist/
-build/
 
 # IDE & Editor Configurations
 .vscode/
 .idea/
 *.swp
 *.swo
+*~
+*.bak
+*.tmp
 
 # Operating System Files
 .DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
 Thumbs.db
 desktop.ini
 
-# Reference Material (Optional)
-docs/reference/
-docs/analyse/
+# Python & Node Temp Files
+__pycache__/
+*.pyc
+*.pyo
+node_modules/
 
-# AI agent rules & local configurations
+# AI Agent & Assistant Local Configs
 AGENTS.md
 AGENTS.override.md
 CLAUDE.md
@@ -54,3 +90,10 @@ GEMINI.md
 CODEX.md
 .agents/
 .claude/
+.codegraph/
+.gemini/
+.cursor/
+
+# Reference Material (Local Analysis)
+docs/reference/
+docs/analyse/
