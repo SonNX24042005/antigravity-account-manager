@@ -1,6 +1,7 @@
 use std::sync::Arc;
 use tokio::sync::RwLock;
 use crate::models::Account;
+use crate::proxy::model_detector::{ModelDetector, TargetModelCategory};
 use crate::storage::{AccountStore, AccountSwitcher};
 use anyhow::{anyhow, Result};
 use rand::Rng;
@@ -9,6 +10,7 @@ use rand::Rng;
 pub struct TokenManager {
     accounts: Arc<RwLock<Vec<Account>>>,
     store: Arc<AccountStore>,
+    model_detector: Arc<ModelDetector>,
 }
 
 impl TokenManager {
@@ -20,7 +22,12 @@ impl TokenManager {
         Self {
             accounts: Arc::new(RwLock::new(loaded)),
             store: store_arc,
+            model_detector: Arc::new(ModelDetector::new()),
         }
+    }
+
+    pub fn get_model_detector(&self) -> Arc<ModelDetector> {
+        self.model_detector.clone()
     }
 
     pub async fn sync_active_account_from_disk(&self) {
@@ -52,52 +59,55 @@ impl TokenManager {
     pub async fn add_account(&self, account: Account) -> Result<()> {
         self.store.save(&account)?;
         let mut list = self.accounts.write().await;
-        // Replace existing account with same email if present
         list.retain(|a| a.email != account.email);
         list.push(account.clone());
         tracing::info!("[TokenManager] Added/Updated account to pool");
         
-        // Auto-switch to newly added account
         let _ = crate::storage::AccountSwitcher::switch_active_account(&account);
         Ok(())
     }
 
-    pub async fn select_highest_gemini_account(&self) -> Result<Account> {
+    /// Automatically selects and switches to the account with the highest quota for the currently active model category
+    pub async fn select_best_account_for_active_model(&self) -> Result<(Account, TargetModelCategory)> {
         self.sync_active_account_from_disk().await;
         let list = self.accounts.read().await.clone();
         if list.is_empty() {
             return Err(anyhow!("No accounts in pool"));
         }
 
+        let target_category = self.model_detector.get_effective_category();
+
         let best = list.into_iter().max_by(|a, b| {
-            let score_a = Self::get_gemini_score(a);
-            let score_b = Self::get_gemini_score(b);
+            let score_a = match target_category {
+                TargetModelCategory::Gemini => a.get_gemini_5h_quota(),
+                TargetModelCategory::ClaudeAndGpt => a.get_claude_gpt_quota(),
+            };
+            let score_b = match target_category {
+                TargetModelCategory::Gemini => b.get_gemini_5h_quota(),
+                TargetModelCategory::ClaudeAndGpt => b.get_claude_gpt_quota(),
+            };
+
             score_a.partial_cmp(&score_b).unwrap_or(std::cmp::Ordering::Equal)
         }).ok_or_else(|| anyhow!("Failed to select best account"))?;
 
         AccountSwitcher::switch_active_account(&best)?;
-        Ok(best)
+        tracing::info!(
+            "[TokenManager] Auto-selected account {} for category {:?} (score: {:.1}%)",
+            best.email,
+            target_category,
+            match target_category {
+                TargetModelCategory::Gemini => best.get_gemini_5h_quota(),
+                TargetModelCategory::ClaudeAndGpt => best.get_claude_gpt_quota(),
+            }
+        );
+
+        Ok((best, target_category))
     }
 
-    fn get_gemini_score(account: &Account) -> f64 {
-        for g in &account.quota_groups {
-            if g.name.to_lowercase().contains("gemini") {
-                for b in &g.buckets {
-                    let w = b.window.to_uppercase();
-                    if w.contains("5H") || w.contains("FIVE") {
-                        if let Some(ref reset_str) = b.reset_time {
-                            if let Ok(reset_dt) = chrono::DateTime::parse_from_rfc3339(reset_str) {
-                                if chrono::Utc::now() >= reset_dt.with_timezone(&chrono::Utc) {
-                                    return 100.0;
-                                }
-                            }
-                        }
-                        return b.remaining_percentage;
-                    }
-                }
-            }
-        }
-        account.quota_percentage
+    #[allow(dead_code)]
+    pub async fn select_highest_gemini_account(&self) -> Result<Account> {
+        let (acc, _) = self.select_best_account_for_active_model().await?;
+        Ok(acc)
     }
 
     pub async fn switch_account(&self, target_id_or_email: &str) -> Result<Account> {
@@ -138,8 +148,7 @@ impl TokenManager {
 
         if let Some(removed) = removed_account {
             if removed.is_active {
-                // If there are other accounts, auto select the best one
-                let _ = self.select_highest_gemini_account().await;
+                let _ = self.select_best_account_for_active_model().await;
             }
             Ok(removed.email)
         } else {
@@ -162,7 +171,6 @@ impl TokenManager {
             return Ok(available[0].clone());
         }
 
-        // Power-of-2-Choices (P2C) selection based on quota percentage
         let mut rng = rand::thread_rng();
         let idx1 = rng.gen_range(0..available.len());
         let mut idx2 = rng.gen_range(0..available.len());
@@ -229,6 +237,13 @@ impl TokenManager {
             if !groups.is_empty() {
                 account.quota_groups = groups.clone();
             }
+
+            // Record quota delta for intelligent usage detection
+            self.model_detector.record_quota_delta(
+                &account.id,
+                account.get_gemini_5h_quota(),
+                account.get_claude_gpt_quota(),
+            );
 
             // 3. Save to disk and update memory
             let _ = self.store.save(&account);

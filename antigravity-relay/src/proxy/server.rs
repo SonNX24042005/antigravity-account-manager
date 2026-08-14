@@ -50,6 +50,7 @@ impl Server {
             .route("/api/accounts/reset", post(handle_reset_cooldowns))
             .route("/api/accounts/oauth/start", get(handle_oauth_start))
             .route("/api/accounts/oauth/callback", get(handle_oauth_callback))
+            .route("/api/preference", get(handle_get_preference).post(handle_set_preference))
             .route("/v1internal/*path", any(handle_passthrough_forwarding))
             .fallback(any(handle_passthrough_forwarding))
             .layer(CorsLayer::permissive())
@@ -63,8 +64,8 @@ impl Server {
             loop {
                 interval.tick().await;
                 tm_bg.refresh_quotas(&client_bg).await;
-                // Automatically keep the best Gemini quota account synchronized into OS Keyring and IDE DB
-                let _ = tm_bg.select_highest_gemini_account().await;
+                // Automatically keep the best quota account for active model synchronized into OS Keyring and IDE DB
+                let _ = tm_bg.select_best_account_for_active_model().await;
             }
         });
 
@@ -150,13 +151,15 @@ async fn handle_switch_account(
 async fn handle_auto_select_highest_gemini(
     State(state): State<AppState>,
 ) -> impl IntoResponse {
-    match state.token_manager.select_highest_gemini_account().await {
-        Ok(acc) => (
+    match state.token_manager.select_best_account_for_active_model().await {
+        Ok((acc, cat)) => (
             StatusCode::OK,
             Json(json!({
                 "status": "ok",
-                "message": format!("Auto-selected best Gemini account: {}", acc.email),
-                "account": acc
+                "category": cat.display_name(),
+                "account": acc.email,
+                "message": format!("Tự động chuyển sang tài khoản {} có hạn ngạch {} cao nhất", acc.email, cat.display_name()),
+                "data": acc
             })),
         )
             .into_response(),
@@ -166,6 +169,28 @@ async fn handle_auto_select_highest_gemini(
         )
             .into_response(),
     }
+}
+
+#[derive(Deserialize)]
+struct SetPreferenceRequest {
+    preference: crate::proxy::model_detector::RoutingPreference,
+}
+
+async fn handle_get_preference(
+    State(state): State<AppState>,
+) -> impl IntoResponse {
+    let info = state.token_manager.get_model_detector().get_state();
+    (StatusCode::OK, Json(info))
+}
+
+async fn handle_set_preference(
+    State(state): State<AppState>,
+    Json(payload): Json<SetPreferenceRequest>,
+) -> impl IntoResponse {
+    let detector = state.token_manager.get_model_detector();
+    let updated = detector.set_preference(payload.preference);
+    let _ = state.token_manager.select_best_account_for_active_model().await;
+    (StatusCode::OK, Json(updated))
 }
 
 #[derive(Deserialize)]
