@@ -16,21 +16,47 @@ Hệ thống quản trị đa tài khoản Google và bộ chuyển đổi tài 
 
 ## Cài đặt và sử dụng
 
-### 1. Biên dịch và khởi chạy
+### 1. Cài đặt nhanh 1 dòng lệnh
 
 ```bash
-cd antigravity-relay
-cargo build --release
-./target/release/antigravity-relay
+./install.sh
 ```
 
-Truy cập bảng điều khiển tại: [http://127.0.0.1:8045](http://127.0.0.1:8045)
+Lệnh này sẽ tự động biên dịch và tạo lệnh điều khiển toàn cục **`agyr`** (và `antigravity-relay`) trong `~/.local/bin`. Bạn có thể gõ `agyr` ở bất kỳ thư mục nào trong terminal.
 
-### 2. Tự động đồng bộ không cần alias
+### 2. Các tùy chọn khởi chạy
 
-Khi daemon `antigravity-relay` đang chạy, hệ thống sẽ tự động quét hạn ngạch ngầm và duy trì tài khoản có hạn ngạch Gemini 5h cao nhất vào OS Keyring và Antigravity IDE. Bạn chỉ cần chạy lệnh `agy` như bình thường mà **không cần tạo bất kỳ alias hay cấu hình shell nào**.
+- **Tự động chạy liên tục cùng hệ thống (Khuyên dùng - Auto-start on boot):**
+  ```bash
+  agyr autostart
+  ```
+  *Dịch vụ sẽ tự khởi động ngầm mỗi khi mở máy, tự động hồi phục và bật lại sau 3 giây nếu bị tắt. Muốn dừng hoàn toàn chỉ cần gõ `agyr stop` hoặc `agyr disable`.*
 
-Khi tắt daemon, `agy` vẫn hoạt động bình thường với tài khoản hiện tại mà không bị gián đoạn hay ảnh hưởng.
+- **Chạy nền thông thường:**
+  ```bash
+  agyr start
+  ```
+
+- **Kiểm tra trạng thái:**
+  ```bash
+  agyr status
+  ```
+
+- **Dừng dịch vụ:**
+  ```bash
+  agyr stop
+  ```
+
+- **Khởi động lại dịch vụ:**
+  ```bash
+  agyr restart
+  ```
+
+Truy cập bảng điều khiển web tại: [http://127.0.0.1:8045](http://127.0.0.1:8045)
+
+### 3. Tự động đồng bộ không cần alias
+
+Khi dịch vụ `agyr` đang chạy, hệ thống sẽ tự động quét hạn ngạch ngầm và duy trì tài khoản có hạn ngạch Gemini 5h cao nhất vào OS Keyring và Antigravity IDE. Bạn chỉ cần chạy lệnh `agy` như bình thường mà **không cần tạo bất kỳ alias hay cấu hình shell nào**.
 
 ---
 

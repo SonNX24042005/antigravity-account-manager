@@ -1,3 +1,4 @@
+mod cli;
 mod config;
 mod device;
 mod models;
@@ -5,6 +6,7 @@ mod oauth;
 mod proxy;
 mod storage;
 
+use cli::Cli;
 use config::Config;
 use proxy::{Server, TokenManager};
 use storage::AccountStore;
@@ -12,6 +14,10 @@ use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
+    let args: Vec<String> = std::env::args().collect();
+    if let Some(res) = Cli::handle_args(&args) {
+        return res;
+    }
     // 1. Initialize colorful terminal logging subscriber
     tracing_subscriber::registry()
         .with(tracing_subscriber::EnvFilter::new(
