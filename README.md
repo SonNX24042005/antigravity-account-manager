@@ -74,14 +74,18 @@ Khi dịch vụ `agyr` đang chạy, hệ thống sẽ tự động quét hạn 
 ```
 ├── antigravity-relay/          # Mã nguồn Rust backend và daemon
 │   ├── src/
+│   │   ├── cli.rs              # Trình quản lý dòng lệnh toàn cục (agyr)
 │   │   ├── storage/            # Quản lý tài khoản, OS Keyring và IDE SQLite
 │   │   ├── proxy/              # Server Axum, quản lý token, tra cứu quota và UI
 │   │   ├── oauth/              # Luồng đăng nhập Google OAuth
 │   │   └── device/             # Định danh phần cứng độc lập
 │   └── Cargo.toml
 ├── docs/                       # Tài liệu dự án và lộ trình phát triển
-│   ├── ROADMAP.md
-│   ├── commands.md
-│   └── tags.md
+│   ├── ROADMAP.md              # Lộ trình và các giai đoạn phát triển
+│   ├── CLI_REFERENCE.md        # Hướng dẫn chi tiết lệnh agyr và API backend
+│   ├── commands.md             # Tài liệu lệnh Antigravity CLI
+│   └── tags.md                 # Tài liệu cờ tham số Antigravity CLI
+├── .github/workflows/          # Tự động hóa CI/CD đóng gói release
+├── install.sh                  # Script cài đặt 1 dòng lệnh qua curl
 └── .gitignore
 ```
