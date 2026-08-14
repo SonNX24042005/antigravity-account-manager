@@ -6,5 +6,3 @@ pub mod secure_file;
 
 pub use account_store::AccountStore;
 pub use account_switcher::AccountSwitcher;
-pub use ide_db::IdeDbSync;
-pub use keyring_sync::KeyringSync;

@@ -95,31 +95,53 @@ async fn require_auth(
         return next.run(req).await;
     }
 
-    let bearer_is_valid = req
-        .headers()
-        .get("authorization")
-        .and_then(|v| v.to_str().ok())
-        .and_then(|auth| auth.strip_prefix("Bearer "))
-        .map(|token| constant_time_token_matches(token, &state.config.master_key))
-        .unwrap_or(false);
-    let session_is_valid = if bearer_is_valid {
+    let is_connect = req.method() == axum::http::Method::CONNECT;
+    let master_credential_is_valid =
+        has_valid_master_credential(req.headers(), is_connect, &state.config.master_key);
+    let browser_session_is_allowed = browser_session_can_authorize(req.method(), &path);
+    let session_is_valid = if master_credential_is_valid || !browser_session_is_allowed {
         false
     } else {
         validate_browser_session(req.headers(), &state).await
     };
 
-    if bearer_is_valid || session_is_valid {
+    if master_credential_is_valid || session_is_valid {
         next.run(req).await
     } else {
         (
             StatusCode::UNAUTHORIZED,
             Json(json!({
                 "error": "Invalid or missing API key",
-                "hint": "Include header: Authorization: Bearer <your-master-key>"
+                "hint": "Use Authorization: Bearer <master-key>, or Proxy-Authorization for CONNECT"
             })),
         )
             .into_response()
     }
+}
+
+fn browser_session_can_authorize(method: &axum::http::Method, path: &str) -> bool {
+    method != axum::http::Method::CONNECT
+        && path.starts_with("/api/")
+        && path != "/api/session/bootstrap"
+}
+
+fn has_valid_master_credential(headers: &HeaderMap, is_connect: bool, expected: &str) -> bool {
+    bearer_header_matches(headers, header::AUTHORIZATION, expected)
+        || (is_connect
+            && bearer_header_matches(
+                headers,
+                HeaderName::from_static("proxy-authorization"),
+                expected,
+            ))
+}
+
+fn bearer_header_matches(headers: &HeaderMap, header_name: HeaderName, expected: &str) -> bool {
+    headers
+        .get(header_name)
+        .and_then(|value| value.to_str().ok())
+        .and_then(|authorization| authorization.strip_prefix("Bearer "))
+        .map(|token| constant_time_token_matches(token, expected))
+        .unwrap_or(false)
 }
 
 async fn validate_browser_session(headers: &HeaderMap, state: &AppState) -> bool {
@@ -1162,8 +1184,9 @@ fn is_hop_by_hop_header(name: &HeaderName) -> bool {
 #[cfg(test)]
 mod tests {
     use super::{
-        constant_time_token_matches, cookie_value, escape_html, is_valid_email,
-        normalize_google_tunnel_target, token_fingerprint, PublicAccount,
+        browser_session_can_authorize, constant_time_token_matches, cookie_value, escape_html,
+        has_valid_master_credential, is_valid_email, normalize_google_tunnel_target,
+        token_fingerprint, PublicAccount,
     };
     use crate::models::Account;
     use axum::http::{header, HeaderMap, HeaderValue};
@@ -1172,6 +1195,61 @@ mod tests {
     fn compares_api_tokens_without_plaintext_equality() {
         assert!(constant_time_token_matches("secret-value", "secret-value"));
         assert!(!constant_time_token_matches("secret-value", "other-value"));
+    }
+
+    #[test]
+    fn connect_accepts_only_explicit_master_credentials() {
+        let mut authorization = HeaderMap::new();
+        authorization.insert(
+            header::AUTHORIZATION,
+            HeaderValue::from_static("Bearer master-secret"),
+        );
+        assert!(has_valid_master_credential(
+            &authorization,
+            false,
+            "master-secret"
+        ));
+
+        let mut proxy_authorization = HeaderMap::new();
+        proxy_authorization.insert(
+            "proxy-authorization",
+            HeaderValue::from_static("Bearer master-secret"),
+        );
+        assert!(has_valid_master_credential(
+            &proxy_authorization,
+            true,
+            "master-secret"
+        ));
+        assert!(!has_valid_master_credential(
+            &proxy_authorization,
+            false,
+            "master-secret"
+        ));
+        assert!(!has_valid_master_credential(
+            &HeaderMap::new(),
+            true,
+            "master-secret"
+        ));
+    }
+
+    #[test]
+    fn browser_session_cannot_authorize_proxy_traffic() {
+        assert!(browser_session_can_authorize(
+            &axum::http::Method::GET,
+            "/api/accounts"
+        ));
+        assert!(!browser_session_can_authorize(
+            &axum::http::Method::POST,
+            "/api/session/bootstrap"
+        ));
+        assert!(!browser_session_can_authorize(
+            &axum::http::Method::POST,
+            "/v1/chat/completions"
+        ));
+        assert!(!browser_session_can_authorize(
+            &axum::http::Method::CONNECT,
+            "cloudcode-pa.googleapis.com:443"
+        ));
     }
 
     #[test]
