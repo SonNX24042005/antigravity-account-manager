@@ -15,10 +15,10 @@ pub fn get_admin_ui_html() -> &'static str {
 </head>
 <body class="bg-zinc-950 text-zinc-200 min-h-screen antialiased selection:bg-zinc-800">
   <!-- Header -->
-  <header class="border-b border-zinc-800/80 bg-zinc-900/40 backdrop-blur sticky top-0 z-40">
+  <header class="border-b border-zinc-800/80 bg-zinc-900/30 backdrop-blur sticky top-0 z-40">
     <div class="max-w-6xl mx-auto px-6 h-14 flex items-center justify-between">
       <div class="flex items-center gap-3">
-        <div class="w-8 h-8 rounded-lg bg-zinc-800 border border-zinc-700/60 flex items-center justify-center text-sm font-semibold text-zinc-200">
+        <div class="w-8 h-8 rounded-lg bg-zinc-900 border border-zinc-800 flex items-center justify-center text-sm font-semibold text-zinc-100">
           A
         </div>
         <div>
@@ -27,7 +27,7 @@ pub fn get_admin_ui_html() -> &'static str {
       </div>
       <div class="flex items-center gap-3">
         <div class="flex items-center gap-2 px-2.5 py-1 rounded-md text-xs font-mono bg-zinc-900 border border-zinc-800 text-zinc-400">
-          <span class="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
+          <span class="w-1.5 h-1.5 rounded-full bg-blue-500"></span>
           127.0.0.1:8045
         </div>
         <button onclick="fetchAccounts()" title="Làm mới" class="p-1.5 hover:bg-zinc-800 rounded-md text-zinc-400 hover:text-zinc-200 transition">
@@ -50,7 +50,7 @@ pub fn get_admin_ui_html() -> &'static str {
           <i data-lucide="key" class="w-3.5 h-3.5 text-zinc-400"></i>
           Thêm token
         </button>
-        <button onclick="startOAuthLogin()" class="px-3 py-1.5 rounded-lg bg-zinc-100 hover:bg-white text-zinc-950 text-xs font-semibold transition flex items-center gap-1.5">
+        <button onclick="startOAuthLogin()" class="px-3.5 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-500 text-white text-xs font-semibold shadow-sm transition flex items-center gap-1.5">
           <i data-lucide="plus" class="w-3.5 h-3.5"></i>
           Đăng nhập Google
         </button>
@@ -59,18 +59,18 @@ pub fn get_admin_ui_html() -> &'static str {
 
     <!-- Quick Stats -->
     <div class="grid grid-cols-2 sm:grid-cols-3 gap-3 mb-6">
-      <div class="p-3.5 rounded-xl bg-zinc-900/50 border border-zinc-800/80">
+      <div class="p-3.5 rounded-xl bg-zinc-900/40 border border-zinc-800/80">
         <span class="text-xs text-zinc-400">Tổng số tài khoản</span>
         <div class="text-xl font-semibold text-zinc-100 mt-1" id="stat-total">0</div>
       </div>
-      <div class="p-3.5 rounded-xl bg-zinc-900/50 border border-zinc-800/80">
+      <div class="p-3.5 rounded-xl bg-zinc-900/40 border border-zinc-800/80">
         <span class="text-xs text-zinc-400">Tài khoản đang dùng</span>
-        <div class="text-xl font-semibold text-emerald-400 mt-1" id="stat-active">0</div>
+        <div class="text-xl font-semibold text-zinc-100 mt-1" id="stat-active">0</div>
       </div>
-      <div class="p-3.5 rounded-xl bg-zinc-900/50 border border-zinc-800/80 col-span-2 sm:col-span-1">
+      <div class="p-3.5 rounded-xl bg-zinc-900/40 border border-zinc-800/80 col-span-2 sm:col-span-1">
         <span class="text-xs text-zinc-400">Chế độ chọn tự động</span>
         <div class="text-xs font-medium text-zinc-300 mt-2 flex items-center gap-1.5">
-          <span class="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
+          <span class="w-1.5 h-1.5 rounded-full bg-blue-500"></span>
           Ưu tiên hạn ngạch 5h Gemini
         </div>
       </div>
@@ -96,20 +96,20 @@ pub fn get_admin_ui_html() -> &'static str {
       <div class="space-y-3.5">
         <div>
           <label class="block text-xs font-medium text-zinc-400 mb-1">Email Google</label>
-          <input id="input-email" type="email" placeholder="user@gmail.com" class="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2 text-xs focus:outline-none focus:border-zinc-600 text-zinc-200">
+          <input id="input-email" type="email" placeholder="user@gmail.com" class="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2 text-xs focus:outline-none focus:border-blue-500 text-zinc-200">
         </div>
         <div>
           <label class="block text-xs font-medium text-zinc-400 mb-1">Access token</label>
-          <textarea id="input-access-token" rows="3" placeholder="ya29.a0..." class="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2 text-xs focus:outline-none focus:border-zinc-600 font-mono text-zinc-200"></textarea>
+          <textarea id="input-access-token" rows="3" placeholder="ya29.a0..." class="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2 text-xs focus:outline-none focus:border-blue-500 font-mono text-zinc-200"></textarea>
         </div>
         <div>
           <label class="block text-xs font-medium text-zinc-400 mb-1">Refresh token (tùy chọn)</label>
-          <input id="input-refresh-token" type="text" placeholder="1//04..." class="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2 text-xs focus:outline-none focus:border-zinc-600 font-mono text-zinc-200">
+          <input id="input-refresh-token" type="text" placeholder="1//04..." class="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2 text-xs focus:outline-none focus:border-blue-500 font-mono text-zinc-200">
         </div>
       </div>
       <div class="flex items-center justify-end gap-2 mt-5">
         <button onclick="closeDirectAddModal()" class="px-3 py-1.5 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-xs font-medium text-zinc-300">Đóng</button>
-        <button onclick="submitDirectAdd()" class="px-3 py-1.5 rounded-lg bg-zinc-100 hover:bg-white text-zinc-950 text-xs font-semibold">Lưu tài khoản</button>
+        <button onclick="submitDirectAdd()" class="px-3.5 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-500 text-white text-xs font-semibold shadow-sm transition">Lưu tài khoản</button>
       </div>
     </div>
   </div>
@@ -149,7 +149,11 @@ pub fn get_admin_ui_html() -> &'static str {
         const isActive = acc.is_active;
 
         return `
-          <div class="p-4 rounded-xl bg-zinc-900/60 border ${isActive ? 'border-zinc-600 bg-zinc-900/90' : 'border-zinc-800/80'} hover:border-zinc-700 transition flex flex-col justify-between">
+          <div class="p-4 rounded-xl transition flex flex-col justify-between ${
+            isActive
+              ? 'bg-zinc-900/70 border border-blue-500/40'
+              : 'bg-zinc-900/40 border border-zinc-800/80 hover:border-zinc-700'
+          }">
             <div>
               <div class="flex items-start justify-between gap-2 mb-3.5">
                 <div class="flex items-center gap-2.5 min-w-0">
@@ -161,16 +165,18 @@ pub fn get_admin_ui_html() -> &'static str {
                     <p class="text-[10px] text-zinc-500 font-mono mt-0.5 truncate">id: ${acc.id.substring(0, 8)}</p>
                   </div>
                 </div>
-                <div class="flex items-center gap-1.5 flex-shrink-0">
-                  ${isActive ? `
-                    <span class="px-2 py-0.5 rounded text-[10px] font-medium bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
-                      Đang dùng
-                    </span>
-                  ` : `
-                    <span class="px-2 py-0.5 rounded text-[10px] font-medium bg-zinc-800 text-zinc-400 border border-zinc-700">
-                      Sẵn sàng
-                    </span>
-                  `}
+                <div class="flex items-center gap-2 flex-shrink-0">
+                  ${
+                    isActive
+                      ? `<span class="inline-flex items-center gap-1.5 text-[10px] font-medium text-blue-400 px-1 py-0.5">
+                          <span class="w-1.5 h-1.5 rounded-full bg-blue-500"></span>
+                          Đang dùng
+                        </span>`
+                      : `<span class="inline-flex items-center gap-1.5 text-[10px] font-medium text-zinc-500 px-1 py-0.5">
+                          <span class="w-1.5 h-1.5 rounded-full bg-zinc-600"></span>
+                          Sẵn sàng
+                        </span>`
+                  }
                   <button onclick="deleteAccount('${acc.id}', '${acc.email}')" title="Xóa tài khoản" class="p-1 hover:bg-zinc-800 text-zinc-500 hover:text-red-400 rounded-md transition flex items-center justify-center">
                     <i data-lucide="trash-2" class="w-3.5 h-3.5"></i>
                   </button>
@@ -199,7 +205,7 @@ pub fn get_admin_ui_html() -> &'static str {
                             <span class="font-mono ${isLow ? 'text-amber-400' : 'text-zinc-200'} font-medium">${pct}%</span>
                           </div>
                           <div class="w-full bg-zinc-900 rounded-full h-1 overflow-hidden border border-zinc-800">
-                            <div class="${isLow ? 'bg-amber-400' : 'bg-emerald-400'} h-full rounded-full" style="width: ${pct}%"></div>
+                            <div class="${isLow ? 'bg-amber-400' : 'bg-blue-500'} h-full rounded-full" style="width: ${pct}%"></div>
                           </div>
                           ${resetInfo.text ? `
                             <div class="text-[9px] text-zinc-500 mt-0.5 font-mono">
@@ -217,7 +223,7 @@ pub fn get_admin_ui_html() -> &'static str {
                       <span class="font-mono font-medium text-zinc-200">${Math.round(acc.quota_percentage)}%</span>
                     </div>
                     <div class="w-full bg-zinc-900 rounded-full h-1 overflow-hidden border border-zinc-800">
-                      <div class="bg-emerald-400 h-full rounded-full" style="width: ${Math.round(acc.quota_percentage)}%"></div>
+                      <div class="bg-blue-500 h-full rounded-full" style="width: ${Math.round(acc.quota_percentage)}%"></div>
                     </div>
                   </div>
                 `}
@@ -227,7 +233,7 @@ pub fn get_admin_ui_html() -> &'static str {
             <!-- Action Button -->
             <div class="mt-4 pt-3 border-t border-zinc-800/60">
               ${isActive ? `
-                <div class="w-full py-1.5 px-2 text-center text-xs font-medium rounded-lg bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 flex items-center justify-center gap-1.5">
+                <div class="w-full py-1.5 px-2 text-center text-xs font-medium rounded-lg bg-blue-500/10 text-blue-400 border border-blue-500/20 flex items-center justify-center gap-1.5">
                   <i data-lucide="check" class="w-3.5 h-3.5"></i> Đang hoạt động
                 </div>
               ` : `
