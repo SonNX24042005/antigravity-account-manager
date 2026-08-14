@@ -234,15 +234,19 @@ impl Cli {
                 .stdout(Stdio::null())
                 .stderr(Stdio::null())
                 .status();
-        } else {
             let exe = std::env::current_exe()?;
             println!("[agyr] Đang khởi chạy tiến trình nền...");
-            Command::new(exe)
-                .arg("run")
+            let mut cmd = Command::new(exe);
+            cmd.arg("run")
                 .stdin(Stdio::null())
                 .stdout(Stdio::null())
-                .stderr(Stdio::null())
-                .spawn()
+                .stderr(Stdio::null());
+            #[cfg(unix)]
+            {
+                use std::os::unix::process::CommandExt;
+                cmd.process_group(0);
+            }
+            cmd.spawn()
                 .context("Không thể khởi chạy tiến trình nền")?;
         }
 
