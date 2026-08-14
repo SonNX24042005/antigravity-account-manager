@@ -45,3 +45,12 @@ desktop.ini
 # Reference Material (Optional)
 docs/reference/
 docs/analyse/
+
+# AI agent rules & local configurations
+AGENTS.md
+AGENTS.override.md
+CLAUDE.md
+GEMINI.md
+CODEX.md
+.agents/
+.claude/

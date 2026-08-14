@@ -161,15 +161,20 @@ pub fn get_admin_ui_html() -> &'static str {
                     <p class="text-[10px] text-zinc-500 font-mono mt-0.5 truncate">id: ${acc.id.substring(0, 8)}</p>
                   </div>
                 </div>
-                ${isActive ? `
-                  <span class="px-2 py-0.5 rounded text-[10px] font-medium bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 flex-shrink-0">
-                    Đang dùng
-                  </span>
-                ` : `
-                  <span class="px-2 py-0.5 rounded text-[10px] font-medium bg-zinc-800 text-zinc-400 border border-zinc-700 flex-shrink-0">
-                    Sẵn sàng
-                  </span>
-                `}
+                <div class="flex items-center gap-1.5 flex-shrink-0">
+                  ${isActive ? `
+                    <span class="px-2 py-0.5 rounded text-[10px] font-medium bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                      Đang dùng
+                    </span>
+                  ` : `
+                    <span class="px-2 py-0.5 rounded text-[10px] font-medium bg-zinc-800 text-zinc-400 border border-zinc-700">
+                      Sẵn sàng
+                    </span>
+                  `}
+                  <button onclick="deleteAccount('${acc.id}', '${acc.email}')" title="Xóa tài khoản" class="p-1 hover:bg-zinc-800 text-zinc-500 hover:text-red-400 rounded-md transition flex items-center justify-center">
+                    <i data-lucide="trash-2" class="w-3.5 h-3.5"></i>
+                  </button>
+                </div>
               </div>
 
               <!-- Quota Breakdown -->
@@ -181,8 +186,11 @@ pub fn get_admin_ui_html() -> &'static str {
                     </div>
                     <div class="space-y-1.5 bg-zinc-950/40 p-2 rounded-lg border border-zinc-800/50">
                       ${g.buckets.map(b => {
-                        const pct = Math.round(b.remaining_percentage);
-                        const resetDisplay = formatResetTime(b.reset_time);
+                        let pct = Math.round(b.remaining_percentage);
+                        const resetInfo = getResetDisplay(b.reset_time, b.window);
+                        if (resetInfo.isExpired) {
+                          pct = 100;
+                        }
                         const isLow = pct < 20;
                         return `
                         <div>
@@ -193,9 +201,9 @@ pub fn get_admin_ui_html() -> &'static str {
                           <div class="w-full bg-zinc-900 rounded-full h-1 overflow-hidden border border-zinc-800">
                             <div class="${isLow ? 'bg-amber-400' : 'bg-emerald-400'} h-full rounded-full" style="width: ${pct}%"></div>
                           </div>
-                          ${resetDisplay ? `
+                          ${resetInfo.text ? `
                             <div class="text-[9px] text-zinc-500 mt-0.5 font-mono">
-                              Reset: ${resetDisplay}
+                              ${resetInfo.text}
                             </div>
                           ` : ''}
                         </div>
@@ -252,8 +260,31 @@ pub fn get_admin_ui_html() -> &'static str {
       }
     }
 
-    function formatResetTime(resetTimeStr) {
-      if (!resetTimeStr) return '';
+    async function deleteAccount(accountId, email) {
+      if (!confirm(`Bạn có chắc chắn muốn xóa tài khoản "${email}" không?`)) {
+        return;
+      }
+      try {
+        const res = await fetch('/api/accounts/delete', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ account_id: accountId })
+        });
+        const data = await res.json();
+        if (res.ok) {
+          fetchAccounts();
+        } else {
+          alert('Lỗi: ' + (data.error || 'Không thể xóa tài khoản'));
+        }
+      } catch (e) {
+        alert('Lỗi kết nối: ' + e.message);
+      }
+    }
+
+    function getResetDisplay(resetTimeStr, window) {
+      if (!resetTimeStr) {
+        return { text: window === 'FIVE_HOUR' ? 'Chu kỳ: 5 giờ (đầy đủ)' : '', isExpired: false };
+      }
       try {
         const d = new Date(resetTimeStr);
         const now = new Date();
@@ -265,7 +296,10 @@ pub fn get_admin_ui_html() -> &'static str {
         const month = (d.getMonth() + 1).toString().padStart(2, '0');
 
         if (diffMs <= 0) {
-          return 'Đã đến giờ';
+          return {
+            text: window === 'FIVE_HOUR' ? 'Đã hồi phục (100% - Chu kỳ 5h)' : 'Đã hồi phục (100%)',
+            isExpired: true
+          };
         }
 
         const diffMinutesTotal = Math.floor(diffMs / (1000 * 60));
@@ -273,15 +307,18 @@ pub fn get_admin_ui_html() -> &'static str {
         const diffMins = diffMinutesTotal % 60;
         const diffDays = Math.floor(diffHours / 24);
 
+        let timeStr = '';
         if (diffDays > 0) {
-          return `${hours}:${mins} (${day}/${month}, còn ${diffDays}d ${diffHours % 24}h)`;
+          timeStr = `Reset: ${hours}:${mins} (${day}/${month}, còn ${diffDays}d ${diffHours % 24}h)`;
         } else if (diffHours > 0) {
-          return `${hours}:${mins} (còn ${diffHours}h ${diffMins}m)`;
+          timeStr = `Reset: ${hours}:${mins} (còn ${diffHours}h ${diffMins}m)`;
         } else {
-          return `${hours}:${mins} (còn ${diffMins}m)`;
+          timeStr = `Reset: ${hours}:${mins} (còn ${diffMins}m)`;
         }
+
+        return { text: timeStr, isExpired: false };
       } catch (e) {
-        return '';
+        return { text: '', isExpired: false };
       }
     }
 

@@ -18,8 +18,9 @@ impl QuotaFetcher {
 
     async fn fetch_overall_quota(client: &Client, access_token: &str) -> Option<f64> {
         let ep_urls = [
-            "https://cloudcode-pa.googleapis.com/v1internal:fetchAvailableModels",
+            "https://daily-cloudcode-pa.sandbox.googleapis.com/v1internal:fetchAvailableModels",
             "https://daily-cloudcode-pa.googleapis.com/v1internal:fetchAvailableModels",
+            "https://cloudcode-pa.googleapis.com/v1internal:fetchAvailableModels",
         ];
 
         for url in ep_urls {
@@ -60,8 +61,9 @@ impl QuotaFetcher {
 
     async fn fetch_quota_groups(client: &Client, access_token: &str) -> Vec<QuotaGroupInfo> {
         let ep_urls = [
-            "https://cloudcode-pa.googleapis.com/v1internal:retrieveUserQuotaSummary",
+            "https://daily-cloudcode-pa.sandbox.googleapis.com/v1internal:retrieveUserQuotaSummary",
             "https://daily-cloudcode-pa.googleapis.com/v1internal:retrieveUserQuotaSummary",
+            "https://cloudcode-pa.googleapis.com/v1internal:retrieveUserQuotaSummary",
         ];
 
         for url in ep_urls {

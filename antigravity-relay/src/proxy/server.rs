@@ -44,6 +44,7 @@ impl Server {
             .route("/v1/messages", post(handle_chat_completions))
             .route("/api/accounts", get(handle_list_accounts))
             .route("/api/accounts/add", post(handle_add_account))
+            .route("/api/accounts/delete", post(handle_delete_account))
             .route("/api/accounts/switch", post(handle_switch_account))
             .route("/api/accounts/auto-select", post(handle_auto_select_highest_gemini))
             .route("/api/accounts/reset", post(handle_reset_cooldowns))
@@ -52,7 +53,18 @@ impl Server {
             .route("/v1internal/*path", any(handle_passthrough_forwarding))
             .fallback(any(handle_passthrough_forwarding))
             .layer(CorsLayer::permissive())
-            .with_state(state);
+            .with_state(state.clone());
+
+        // Background quota auto-refresher (runs on startup and every 30s)
+        let tm_bg = state.token_manager.clone();
+        let client_bg = state.http_client.clone();
+        tokio::spawn(async move {
+            let mut interval = tokio::time::interval(std::time::Duration::from_secs(30));
+            loop {
+                interval.tick().await;
+                tm_bg.refresh_quotas(&client_bg).await;
+            }
+        });
 
         tracing::info!("🚀 Antigravity Relay Server running on http://{}", addr);
         let listener = tokio::net::TcpListener::bind(addr).await?;
@@ -78,6 +90,32 @@ async fn handle_reset_cooldowns(
     state.token_manager.reset_cooldowns().await;
     tracing::info!("[TokenManager] Cooldowns reset for all accounts in pool");
     (StatusCode::OK, Json(json!({ "status": "ok", "message": "All account cooldowns reset" })))
+}
+
+#[derive(Deserialize)]
+struct DeleteAccountRequest {
+    account_id: String,
+}
+
+async fn handle_delete_account(
+    State(state): State<AppState>,
+    Json(payload): Json<DeleteAccountRequest>,
+) -> impl IntoResponse {
+    match state.token_manager.delete_account(&payload.account_id).await {
+        Ok(email) => (
+            StatusCode::OK,
+            Json(json!({
+                "status": "ok",
+                "message": format!("Đã xóa tài khoản {}", email)
+            })),
+        )
+            .into_response(),
+        Err(err) => (
+            StatusCode::BAD_REQUEST,
+            Json(json!({ "error": err.to_string() })),
+        )
+            .into_response(),
+    }
 }
 
 #[derive(Deserialize)]
@@ -147,6 +185,12 @@ async fn handle_add_account(
     if let Err(e) = state.token_manager.add_account(account.clone()).await {
         return (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({ "error": e.to_string() }))).into_response();
     }
+
+    let tm = state.token_manager.clone();
+    let client = state.http_client.clone();
+    tokio::spawn(async move {
+        tm.refresh_quotas(&client).await;
+    });
 
     (StatusCode::OK, Json(json!({ "status": "success", "account": account }))).into_response()
 }
@@ -229,6 +273,12 @@ async fn handle_oauth_callback(
 
             // Save to pool and auto-switch
             let _ = state.token_manager.add_account(account.clone()).await;
+
+            let tm = state.token_manager.clone();
+            let client = state.http_client.clone();
+            tokio::spawn(async move {
+                tm.refresh_quotas(&client).await;
+            });
 
             (StatusCode::OK, format!("🎉 Successfully logged in account: {}! You can close this tab now.", email)).into_response()
         }

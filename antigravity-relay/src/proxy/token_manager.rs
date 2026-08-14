@@ -85,6 +85,13 @@ impl TokenManager {
                 for b in &g.buckets {
                     let w = b.window.to_uppercase();
                     if w.contains("5H") || w.contains("FIVE") {
+                        if let Some(ref reset_str) = b.reset_time {
+                            if let Ok(reset_dt) = chrono::DateTime::parse_from_rfc3339(reset_str) {
+                                if chrono::Utc::now() >= reset_dt.with_timezone(&chrono::Utc) {
+                                    return 100.0;
+                                }
+                            }
+                        }
                         return b.remaining_percentage;
                     }
                 }
@@ -110,6 +117,31 @@ impl TokenManager {
         if let Some(acc) = target_account {
             crate::storage::AccountSwitcher::switch_active_account(&acc)?;
             Ok(acc)
+        } else {
+            Err(anyhow!("Account not found: {}", target_id_or_email))
+        }
+    }
+
+    pub async fn delete_account(&self, target_id_or_email: &str) -> Result<String> {
+        let removed_account = {
+            let mut list = self.accounts.write().await;
+            let pos = list.iter().position(|a| a.id == target_id_or_email || a.email == target_id_or_email);
+            if let Some(index) = pos {
+                let removed = list.remove(index);
+                let _ = self.store.delete(&removed.id);
+                tracing::info!("[TokenManager] Deleted account: {}", removed.email);
+                Some(removed)
+            } else {
+                None
+            }
+        };
+
+        if let Some(removed) = removed_account {
+            if removed.is_active {
+                // If there are other accounts, auto select the best one
+                let _ = self.select_highest_gemini_account().await;
+            }
+            Ok(removed.email)
         } else {
             Err(anyhow!("Account not found: {}", target_id_or_email))
         }
@@ -171,23 +203,51 @@ impl TokenManager {
         }
     }
 
-    #[allow(dead_code)]
     pub async fn refresh_quotas(&self, client: &reqwest::Client) {
         let list = self.accounts.read().await.clone();
         for mut account in list {
+            // 1. Auto-refresh OAuth token if expired
+            let mut token_refreshed = false;
+            if account.is_token_expired() && !account.refresh_token.is_empty() {
+                if let Ok(token_resp) = crate::oauth::GoogleOAuth::refresh_access_token(client, &account.refresh_token).await {
+                    account.access_token = token_resp.access_token;
+                    if let Some(new_refresh) = token_resp.refresh_token {
+                        account.refresh_token = new_refresh;
+                    }
+                    let expires_in = token_resp.expires_in.unwrap_or(3600);
+                    account.expires_at = chrono::Utc::now() + chrono::Duration::seconds(expires_in);
+                    token_refreshed = true;
+                    tracing::info!("[TokenManager] Successfully refreshed token for {}", account.email);
+                }
+            }
+
+            // 2. Fetch latest quota from Google CloudCode PA API
             let (overall_pct, groups) = crate::proxy::quota::QuotaFetcher::fetch_account_quota_full(client, &account.access_token).await;
             if let Some(pct) = overall_pct {
                 account.quota_percentage = pct;
             }
-            account.quota_groups = groups.clone();
+            if !groups.is_empty() {
+                account.quota_groups = groups.clone();
+            }
 
+            // 3. Save to disk and update memory
             let _ = self.store.save(&account);
             let mut write_list = self.accounts.write().await;
             if let Some(acc) = write_list.iter_mut().find(|a| a.id == account.id) {
+                acc.access_token = account.access_token.clone();
+                acc.refresh_token = account.refresh_token.clone();
+                acc.expires_at = account.expires_at;
                 if let Some(pct) = overall_pct {
                     acc.quota_percentage = pct;
                 }
-                acc.quota_groups = groups;
+                if !groups.is_empty() {
+                    acc.quota_groups = groups;
+                }
+            }
+
+            // 4. If token was refreshed and account is currently active, sync to Keyring and IDE DB
+            if token_refreshed && account.is_active {
+                let _ = crate::storage::AccountSwitcher::switch_active_account(&account);
             }
         }
     }

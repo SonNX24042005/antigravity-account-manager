@@ -6,7 +6,7 @@ mod proxy;
 mod storage;
 
 use config::Config;
-use proxy::{CliSync, Server, TokenManager};
+use proxy::{Server, TokenManager};
 use storage::AccountStore;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
