@@ -177,8 +177,17 @@ impl ModelDetector {
         }
 
         let target_log = latest_file?;
-        let content = fs::read_to_string(target_log).ok()?;
-        
+        use std::io::{Read, Seek, SeekFrom};
+        let mut file = fs::File::open(target_log).ok()?;
+        let meta = file.metadata().ok()?;
+        let file_len = meta.len();
+        let read_size = file_len.min(32 * 1024); // read up to last 32KB
+        let offset = file_len - read_size;
+        file.seek(SeekFrom::Start(offset)).ok()?;
+        let mut buffer = vec![0u8; read_size as usize];
+        file.read_exact(&mut buffer).ok()?;
+        let content = String::from_utf8_lossy(&buffer);
+
         // Check the last 100 lines
         let lines: Vec<&str> = content.lines().collect();
         let scan_lines = if lines.len() > 100 {

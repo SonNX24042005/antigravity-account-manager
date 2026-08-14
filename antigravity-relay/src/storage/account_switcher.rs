@@ -106,9 +106,8 @@ impl AccountSwitcher {
                         .filter(|line| {
                             !line.contains("GOOGLE_GEMINI_BASE_URL")
                                 && !line.contains("ANTIGRAVITY_BASE_URL")
-                                && !line.contains("HTTP_PROXY")
-                                && !line.contains("HTTPS_PROXY")
                                 && !line.contains("Antigravity Relay Proxy Config")
+                                && !(line.contains("8045") && (line.contains("HTTP_PROXY") || line.contains("HTTPS_PROXY")))
                         })
                         .collect();
                     let _ = fs::write(profile_path, new_lines.join("\n"));
