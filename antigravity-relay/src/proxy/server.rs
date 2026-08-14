@@ -55,7 +55,7 @@ impl Server {
             .layer(CorsLayer::permissive())
             .with_state(state.clone());
 
-        // Background quota auto-refresher (runs on startup and every 30s)
+        // Background quota auto-refresher & auto-synchronizer (runs on startup and every 30s)
         let tm_bg = state.token_manager.clone();
         let client_bg = state.http_client.clone();
         tokio::spawn(async move {
@@ -63,6 +63,8 @@ impl Server {
             loop {
                 interval.tick().await;
                 tm_bg.refresh_quotas(&client_bg).await;
+                // Automatically keep the best Gemini quota account synchronized into OS Keyring and IDE DB
+                let _ = tm_bg.select_highest_gemini_account().await;
             }
         });
 

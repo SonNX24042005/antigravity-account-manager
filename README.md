@@ -26,14 +26,11 @@ cargo build --release
 
 Truy cập bảng điều khiển tại: [http://127.0.0.1:8045](http://127.0.0.1:8045)
 
-### 2. Tự động chuyển tài khoản với `agy` CLI
+### 2. Tự động đồng bộ không cần alias
 
-Tạo alias hoặc script wrapper cho `agy` để tự động chọn tài khoản có hạn ngạch Gemini 5h cao nhất:
+Khi daemon `antigravity-relay` đang chạy, hệ thống sẽ tự động quét hạn ngạch ngầm và duy trì tài khoản có hạn ngạch Gemini 5h cao nhất vào OS Keyring và Antigravity IDE. Bạn chỉ cần chạy lệnh `agy` như bình thường mà **không cần tạo bất kỳ alias hay cấu hình shell nào**.
 
-```bash
-# Thêm vào ~/.bashrc hoặc ~/.zshrc nếu muốn
-alias agy='curl -s -X POST http://127.0.0.1:8045/api/accounts/auto-select --connect-timeout 0.2 --max-time 0.5 >/dev/null 2>&1 || true; agy-bin'
-```
+Khi tắt daemon, `agy` vẫn hoạt động bình thường với tài khoản hiện tại mà không bị gián đoạn hay ảnh hưởng.
 
 ---
 
