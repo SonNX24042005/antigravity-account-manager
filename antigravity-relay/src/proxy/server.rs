@@ -282,7 +282,48 @@ async fn handle_oauth_callback(
                 tm.refresh_quotas(&client).await;
             });
 
-            (StatusCode::OK, format!("Successfully logged in account: {}! You can close this tab now.", email)).into_response()
+            let success_html = format!(
+                r#"<!DOCTYPE html>
+<html lang="vi" class="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Đăng nhập thành công</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <meta http-equiv="refresh" content="1.5;url=/">
+</head>
+<body class="bg-[#0b0c10] text-zinc-200 min-h-screen flex items-center justify-center p-4">
+  <div class="bg-[#121626] border border-blue-500/40 rounded-2xl p-6 max-w-sm w-full text-center shadow-2xl">
+    <div class="w-12 h-12 rounded-full bg-blue-500/10 border border-blue-500/20 text-blue-400 flex items-center justify-center mx-auto mb-4 text-xl font-bold">
+      ✓
+    </div>
+    <h2 class="text-base font-semibold text-zinc-100">Đăng nhập thành công</h2>
+    <p class="text-xs text-blue-400 font-mono mt-1 mb-4 truncate">{}</p>
+    <p class="text-xs text-zinc-400 mb-5">Đang tự động chuyển hướng về bảng điều khiển...</p>
+    <a href="/" class="inline-block w-full py-2 px-4 rounded-lg bg-blue-600 hover:bg-blue-500 text-white text-xs font-semibold shadow-sm transition">
+      Quay về bảng điều khiển ngay
+    </a>
+  </div>
+  <script>
+    if (window.opener && !window.opener.closed) {{
+      try {{
+        window.opener.fetchAccounts();
+      }} catch (e) {{}}
+      setTimeout(() => {{
+        window.close();
+      }}, 1200);
+    }} else {{
+      setTimeout(() => {{
+        window.location.href = '/';
+      }}, 1200);
+    }}
+  </script>
+</body>
+</html>"#,
+                email
+            );
+
+            Html(success_html).into_response()
         }
         _ => (StatusCode::INTERNAL_SERVER_ERROR, "Failed to exchange OAuth code for tokens").into_response(),
     }
