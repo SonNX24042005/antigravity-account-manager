@@ -89,6 +89,7 @@ async fn require_auth(
     // Public routes that don't require authentication
     if path == "/"
         || path == "/admin"
+        || path == "/api/health"
         || path == "/api/accounts/oauth/callback"
         || path == "/api/session/exchange"
     {
