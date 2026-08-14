@@ -74,7 +74,7 @@ impl AccountSwitcher {
             Self::clean_shell_profiles();
         }
 
-        tracing::info!("[AccountSwitcher] 🚀 Switched active account to: {}", account.email);
+        tracing::info!("[AccountSwitcher] Switched active account to: {}", account.email);
         Ok(())
     }
 

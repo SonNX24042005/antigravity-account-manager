@@ -68,7 +68,7 @@ impl Server {
             }
         });
 
-        tracing::info!("🚀 Antigravity Relay Server running on http://{}", addr);
+        tracing::info!("Antigravity Relay Server running on http://{}", addr);
         let listener = tokio::net::TcpListener::bind(addr).await?;
         axum::serve(listener, app).await?;
         Ok(())
@@ -282,7 +282,7 @@ async fn handle_oauth_callback(
                 tm.refresh_quotas(&client).await;
             });
 
-            (StatusCode::OK, format!("🎉 Successfully logged in account: {}! You can close this tab now.", email)).into_response()
+            (StatusCode::OK, format!("Successfully logged in account: {}! You can close this tab now.", email)).into_response()
         }
         _ => (StatusCode::INTERNAL_SERVER_ERROR, "Failed to exchange OAuth code for tokens").into_response(),
     }
@@ -366,7 +366,7 @@ async fn handle_chat_completions(
                         },
                     };
 
-                    tracing::info!("[Proxy] ✅ Success 200 OK via account: {}", account.email);
+                    tracing::info!("[Proxy] Success 200 OK via account: {}", account.email);
                     return (StatusCode::OK, Json(openai_res)).into_response();
                 } else if status == StatusCode::TOO_MANY_REQUESTS || status == StatusCode::FORBIDDEN || status == StatusCode::UNAUTHORIZED {
                     tracing::warn!(

@@ -27,7 +27,7 @@ async fn main() -> anyhow::Result<()> {
         .init();
 
     tracing::info!("=====================================================");
-    tracing::info!("   🚀 Antigravity Relay Daemon Engine v1.0.0");
+    tracing::info!("   Antigravity Relay Daemon Engine v1.0.0");
     tracing::info!("=====================================================");
 
     // 2. Load configuration & create data directories
