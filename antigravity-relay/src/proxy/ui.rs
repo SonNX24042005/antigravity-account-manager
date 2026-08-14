@@ -175,6 +175,14 @@ pub fn get_admin_ui_html() -> &'static str {
   <script>
     lucide.createIcons();
 
+    // Auth key injected by server at render time
+    const API_KEY = '{{MASTER_KEY}}';
+    function authHeaders(extra) {
+      const h = { 'Authorization': 'Bearer ' + API_KEY };
+      if (extra) { Object.assign(h, extra); }
+      return h;
+    }
+
     function toggleAddMenu() {
       const menu = document.getElementById('add-menu');
       menu.classList.toggle('hidden');
@@ -202,7 +210,7 @@ pub fn get_admin_ui_html() -> &'static str {
 
     async function fetchPreference() {
       try {
-        const res = await fetch('/api/preference');
+        const res = await fetch('/api/preference', { headers: authHeaders() });
         const data = await res.json();
         const select = document.getElementById('pref-select');
         if (select) {
@@ -234,7 +242,7 @@ pub fn get_admin_ui_html() -> &'static str {
       try {
         const res = await fetch('/api/preference', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: authHeaders({ 'Content-Type': 'application/json' }),
           body: JSON.stringify({ preference: prefVal })
         });
         if (res.ok) {
@@ -248,7 +256,7 @@ pub fn get_admin_ui_html() -> &'static str {
 
     async function fetchAccounts() {
       try {
-        const res = await fetch('/api/accounts');
+        const res = await fetch('/api/accounts', { headers: authHeaders() });
         const accounts = await res.json();
         renderAccounts(accounts);
       } catch (err) {
@@ -385,7 +393,7 @@ pub fn get_admin_ui_html() -> &'static str {
       try {
         const res = await fetch('/api/accounts/switch', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: authHeaders({ 'Content-Type': 'application/json' }),
           body: JSON.stringify({ account_id: accountId })
         });
         const data = await res.json();
@@ -406,7 +414,7 @@ pub fn get_admin_ui_html() -> &'static str {
       try {
         const res = await fetch('/api/accounts/delete', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: authHeaders({ 'Content-Type': 'application/json' }),
           body: JSON.stringify({ account_id: accountId })
         });
         const data = await res.json();
@@ -463,7 +471,7 @@ pub fn get_admin_ui_html() -> &'static str {
 
     async function startOAuthLogin() {
       try {
-        const res = await fetch('/api/accounts/oauth/start');
+        const res = await fetch('/api/accounts/oauth/start', { headers: authHeaders() });
         const data = await res.json();
         if (data.auth_url) {
           window.open(data.auth_url, '_blank');
@@ -494,7 +502,7 @@ pub fn get_admin_ui_html() -> &'static str {
       try {
         const res = await fetch('/api/accounts/add', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: authHeaders({ 'Content-Type': 'application/json' }),
           body: JSON.stringify({ email, access_token, refresh_token })
         });
         if (res.ok) {

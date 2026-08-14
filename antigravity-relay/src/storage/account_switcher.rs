@@ -42,14 +42,28 @@ impl AccountSwitcher {
             // Locations for ~/.antigravity
             let ant_dir = home.join(".antigravity");
             let _ = fs::create_dir_all(&ant_dir);
-            let _ = fs::write(ant_dir.join("auth.json"), &auth_str);
-            let _ = fs::write(ant_dir.join("credentials.json"), &auth_str);
+            for name in ["auth.json", "credentials.json"] {
+                let p = ant_dir.join(name);
+                let _ = fs::write(&p, &auth_str);
+                #[cfg(unix)]
+                {
+                    use std::os::unix::fs::PermissionsExt;
+                    let _ = fs::set_permissions(&p, fs::Permissions::from_mode(0o600));
+                }
+            }
 
             // Locations for ~/.gemini/antigravity-cli
             let gemini_cli_dir = home.join(".gemini").join("antigravity-cli");
             let _ = fs::create_dir_all(&gemini_cli_dir);
-            let _ = fs::write(gemini_cli_dir.join("auth.json"), &auth_str);
-            let _ = fs::write(gemini_cli_dir.join("credentials.json"), &auth_str);
+            for name in ["auth.json", "credentials.json"] {
+                let p = gemini_cli_dir.join(name);
+                let _ = fs::write(&p, &auth_str);
+                #[cfg(unix)]
+                {
+                    use std::os::unix::fs::PermissionsExt;
+                    let _ = fs::set_permissions(&p, fs::Permissions::from_mode(0o600));
+                }
+            }
 
             // Clean proxy settings from config.json and settings.json so agy runs natively
             let config_file = ant_dir.join("config.json");

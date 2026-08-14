@@ -38,7 +38,12 @@ impl AccountStore {
         fs::create_dir_all(&self.base_dir)?;
         let path = self.base_dir.join(format!("{}.json", account.id));
         let json = serde_json::to_string_pretty(account)?;
-        fs::write(path, json)?;
+        fs::write(&path, json)?;
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let _ = fs::set_permissions(&path, fs::Permissions::from_mode(0o600));
+        }
         Ok(())
     }
 

@@ -1,8 +1,9 @@
 use std::net::SocketAddr;
 use axum::{
     extract::{Query, State},
-    http::{HeaderMap, StatusCode},
-    response::{Html, IntoResponse, Json},
+    http::{HeaderMap, HeaderValue, StatusCode},
+    middleware,
+    response::{Html, IntoResponse, Json, Response},
     routing::{any, get, post},
     Router,
 };
@@ -13,7 +14,7 @@ use crate::models::{Account, ChatCompletionRequest, ChatCompletionResponse, Chat
 use crate::oauth::GoogleOAuth;
 use crate::proxy::mappers::Mappers;
 use crate::proxy::token_manager::TokenManager;
-use tower_http::cors::CorsLayer;
+use tower_http::cors::{AllowOrigin, CorsLayer};
 
 #[derive(Clone)]
 pub struct AppState {
@@ -23,6 +24,41 @@ pub struct AppState {
 }
 
 pub struct Server;
+
+/// Authentication middleware: validates Bearer token on protected routes.
+/// Public routes (admin UI, OAuth callback) are excluded.
+async fn require_auth(
+    State(state): State<AppState>,
+    req: axum::extract::Request,
+    next: middleware::Next,
+) -> Response {
+    let path = req.uri().path().to_string();
+
+    // Public routes that don't require authentication
+    if path == "/" || path == "/admin" || path == "/api/accounts/oauth/callback" {
+        return next.run(req).await;
+    }
+
+    let is_valid = req
+        .headers()
+        .get("authorization")
+        .and_then(|v| v.to_str().ok())
+        .map(|auth| auth == format!("Bearer {}", state.config.master_key))
+        .unwrap_or(false);
+
+    if is_valid {
+        next.run(req).await
+    } else {
+        (
+            StatusCode::UNAUTHORIZED,
+            Json(json!({
+                "error": "Invalid or missing API key",
+                "hint": "Include header: Authorization: Bearer <your-master-key>"
+            })),
+        )
+            .into_response()
+    }
+}
 
 impl Server {
     pub async fn run(config: Config, token_manager: TokenManager) -> anyhow::Result<()> {
@@ -53,7 +89,16 @@ impl Server {
             .route("/api/preference", get(handle_get_preference).post(handle_set_preference))
             .route("/v1internal/*path", any(handle_passthrough_forwarding))
             .fallback(any(handle_passthrough_forwarding))
-            .layer(CorsLayer::permissive())
+            .layer(middleware::from_fn_with_state(state.clone(), require_auth))
+            .layer(
+                CorsLayer::new()
+                    .allow_origin(AllowOrigin::list([
+                        "http://127.0.0.1:8045".parse::<HeaderValue>().unwrap(),
+                        "http://localhost:8045".parse::<HeaderValue>().unwrap(),
+                    ]))
+                    .allow_methods(tower_http::cors::Any)
+                    .allow_headers(tower_http::cors::Any),
+            )
             .with_state(state.clone());
 
         // Background quota auto-refresher & auto-synchronizer (runs on startup and every 30s)
@@ -76,8 +121,10 @@ impl Server {
     }
 }
 
-async fn handle_admin_ui() -> impl IntoResponse {
-    Html(crate::proxy::ui::get_admin_ui_html())
+async fn handle_admin_ui(State(state): State<AppState>) -> impl IntoResponse {
+    let html = crate::proxy::ui::get_admin_ui_html()
+        .replace("{{MASTER_KEY}}", &state.config.master_key);
+    Html(html)
 }
 
 async fn handle_list_accounts(
@@ -235,7 +282,7 @@ async fn handle_oauth_start(
         .redirect_uri
         .unwrap_or_else(|| format!("http://{}:{}/api/accounts/oauth/callback", state.config.host, state.config.port));
     
-    let auth_url = GoogleOAuth::build_auth_url(&redirect_uri, "state123");
+    let auth_url = GoogleOAuth::build_auth_url(&redirect_uri, &uuid::Uuid::new_v4().to_string());
     Json(json!({ "auth_url": auth_url, "redirect_uri": redirect_uri }))
 }
 
