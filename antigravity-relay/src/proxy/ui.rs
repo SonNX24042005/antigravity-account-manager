@@ -5,12 +5,27 @@ pub fn get_admin_ui_html() -> &'static str {
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Quản lý tài khoản - Antigravity</title>
-  <script src="https://cdn.tailwindcss.com"></script>
-  <script src="https://unpkg.com/lucide@latest"></script>
-  <style>
-    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap');
+  <style nonce="{{CSP_NONCE}}">
+    {{ADMIN_CSS}}
     body { font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif; }
     .font-mono { font-family: 'JetBrains Mono', monospace; }
+    [data-lucide] { display: inline-flex; align-items: center; justify-content: center; font-style: normal; }
+    [data-lucide="refresh-cw"]::before { content: '↻'; }
+    [data-lucide="plus"]::before { content: '+'; }
+    [data-lucide="chevron-down"]::before { content: '⌄'; }
+    [data-lucide="globe"]::before { content: '◎'; }
+    [data-lucide="key"]::before { content: '⚿'; }
+    [data-lucide="x"]::before { content: '×'; }
+    [data-lucide="trash-2"]::before { content: '⌫'; }
+    [data-lucide="arrow-right-left"]::before { content: '⇄'; }
+    [data-lucide="check"]::before { content: '✓'; }
+    [data-lucide="user-x"]::before { content: '∅'; }
+    .quota-progress { appearance: none; display: block; width: 100%; height: 0.25rem; overflow: hidden; border: 1px solid rgb(39 39 42); border-radius: 9999px; background: rgb(24 24 27); }
+    .quota-progress::-webkit-progress-bar { background: rgb(24 24 27); }
+    .quota-progress::-webkit-progress-value { background: linear-gradient(to right, #2563eb, #38bdf8); }
+    .quota-progress.low::-webkit-progress-value { background: #fbbf24; }
+    .quota-progress::-moz-progress-bar { background: linear-gradient(to right, #2563eb, #38bdf8); }
+    .quota-progress.low::-moz-progress-bar { background: #fbbf24; }
   </style>
 </head>
 <body class="bg-[#0b0c10] text-zinc-200 min-h-screen antialiased selection:bg-blue-600/30">
@@ -28,9 +43,9 @@ pub fn get_admin_ui_html() -> &'static str {
       <div class="flex items-center gap-3">
         <div class="flex items-center gap-2 px-2.5 py-1 rounded-md text-xs font-mono bg-zinc-900/90 border border-zinc-800 text-zinc-300">
           <span class="w-1.5 h-1.5 rounded-full bg-blue-500"></span>
-          127.0.0.1:8045
+          <span id="relay-address">Đang kết nối...</span>
         </div>
-        <button onclick="fetchAccounts(); fetchPreference();" title="Làm mới" class="p-1.5 hover:bg-zinc-800 rounded-md text-zinc-400 hover:text-zinc-200 transition">
+        <button id="refresh-btn" title="Làm mới" class="p-1.5 hover:bg-zinc-800 rounded-md text-zinc-400 hover:text-zinc-200 transition">
           <i data-lucide="refresh-cw" class="w-4 h-4 text-zinc-400"></i>
         </button>
       </div>
@@ -48,7 +63,7 @@ pub fn get_admin_ui_html() -> &'static str {
 
       <!-- Add Account Dropdown Menu -->
       <div class="relative">
-        <button id="add-account-btn" onclick="toggleAddMenu()" class="px-3.5 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-500 text-white text-xs font-semibold shadow-sm transition flex items-center gap-1.5 cursor-pointer">
+        <button id="add-account-btn" class="px-3.5 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-500 text-white text-xs font-semibold shadow-sm transition flex items-center gap-1.5 cursor-pointer">
           <i data-lucide="plus" class="w-3.5 h-3.5"></i>
           Thêm tài khoản
           <i data-lucide="chevron-down" class="w-3.5 h-3.5 ml-0.5 text-blue-200"></i>
@@ -61,7 +76,7 @@ pub fn get_admin_ui_html() -> &'static str {
           </div>
           
           <!-- Option 1: Google OAuth -->
-          <button onclick="handleOptionOAuth()" class="w-full text-left p-2.5 rounded-lg hover:bg-zinc-800/80 transition flex items-start gap-3 group cursor-pointer">
+          <button id="oauth-option-btn" class="w-full text-left p-2.5 rounded-lg hover:bg-zinc-800/80 transition flex items-start gap-3 group cursor-pointer">
             <div class="w-7 h-7 rounded-md bg-blue-500/10 border border-blue-500/20 text-blue-400 flex items-center justify-center flex-shrink-0 mt-0.5 group-hover:bg-blue-500 group-hover:text-white transition">
               <i data-lucide="globe" class="w-4 h-4"></i>
             </div>
@@ -77,7 +92,7 @@ pub fn get_admin_ui_html() -> &'static str {
           </button>
 
           <!-- Option 2: Direct Token -->
-          <button onclick="handleOptionDirectToken()" class="w-full text-left p-2.5 rounded-lg hover:bg-zinc-800/80 transition flex items-start gap-3 group cursor-pointer">
+          <button id="direct-option-btn" class="w-full text-left p-2.5 rounded-lg hover:bg-zinc-800/80 transition flex items-start gap-3 group cursor-pointer">
             <div class="w-7 h-7 rounded-md bg-zinc-800 border border-zinc-700/60 text-zinc-400 flex items-center justify-center flex-shrink-0 mt-0.5 group-hover:bg-zinc-700 group-hover:text-zinc-200 transition">
               <i data-lucide="key" class="w-4 h-4"></i>
             </div>
@@ -110,7 +125,7 @@ pub fn get_admin_ui_html() -> &'static str {
       <div class="p-3.5 rounded-xl bg-zinc-900/50 border border-zinc-800/80 flex flex-col justify-between">
         <div class="flex items-center justify-between gap-2">
           <span class="text-xs text-zinc-400">Chế độ tự động chọn</span>
-          <select id="pref-select" onchange="changePreference(this.value)" class="bg-zinc-950 border border-zinc-800 text-[11px] text-zinc-200 rounded-md px-2 py-0.5 focus:outline-none focus:border-blue-500">
+          <select id="pref-select" class="bg-zinc-950 border border-zinc-800 text-[11px] text-zinc-200 rounded-md px-2 py-0.5 focus:outline-none focus:border-blue-500">
             <option value="auto">Tự động (Theo mô hình vừa dùng)</option>
             <option value="gemini">Luôn ưu tiên Gemini</option>
             <option value="claude_gpt">Luôn ưu tiên Claude & GPT</option>
@@ -142,7 +157,7 @@ pub fn get_admin_ui_html() -> &'static str {
           <h3 class="text-sm font-semibold text-zinc-100">Nhập token thủ công</h3>
           <p class="text-[11px] text-zinc-400 mt-0.5">Dán thông tin token của tài khoản Google</p>
         </div>
-        <button onclick="closeDirectAddModal()" class="text-zinc-400 hover:text-zinc-200">
+        <button id="close-add-modal-btn" class="text-zinc-400 hover:text-zinc-200">
           <i data-lucide="x" class="w-4 h-4"></i>
         </button>
       </div>
@@ -161,32 +176,70 @@ pub fn get_admin_ui_html() -> &'static str {
         </div>
       </div>
       <div class="flex items-center justify-between mt-5 pt-3 border-t border-zinc-800">
-        <button onclick="closeDirectAddModal(); startOAuthLogin();" class="text-xs text-blue-400 hover:text-blue-300 transition cursor-pointer">
+        <button id="modal-oauth-btn" class="text-xs text-blue-400 hover:text-blue-300 transition cursor-pointer">
           Hoặc đăng nhập Google
         </button>
         <div class="flex items-center gap-2">
-          <button onclick="closeDirectAddModal()" class="px-3 py-1.5 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-xs font-medium text-zinc-300 cursor-pointer">Đóng</button>
-          <button onclick="submitDirectAdd()" class="px-3.5 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-500 text-white text-xs font-semibold shadow-sm transition cursor-pointer">Lưu tài khoản</button>
+          <button id="cancel-add-btn" class="px-3 py-1.5 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-xs font-medium text-zinc-300 cursor-pointer">Đóng</button>
+          <button id="save-add-btn" class="px-3.5 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-500 text-white text-xs font-semibold shadow-sm transition cursor-pointer">Lưu tài khoản</button>
         </div>
       </div>
     </div>
   </div>
 
-  <script>
-    lucide.createIcons();
+  <script nonce="{{CSP_NONCE}}">
+    let SESSION_READY = false;
 
-    // Auth key injected by server at render time
-    const API_KEY = '{{MASTER_KEY}}';
-    function authHeaders(extra) {
-      const h = { 'Authorization': 'Bearer ' + API_KEY };
-      if (extra) { Object.assign(h, extra); }
-      return h;
+    async function apiFetch(url, options) {
+      const request = options ? { ...options } : {};
+      request.credentials = 'same-origin';
+      const response = await window.fetch(url, request);
+      if (response.status === 401) {
+        SESSION_READY = false;
+        showSessionHelp();
+        throw new Error('Phiên quản trị đã hết hạn. Hãy chạy lại lệnh agyr.');
+      }
+      return response;
+    }
+
+    async function establishBrowserSession() {
+      const fragment = new URLSearchParams(window.location.hash.slice(1));
+      const bootstrapToken = fragment.get('bootstrap');
+      if (bootstrapToken) {
+        window.history.replaceState(null, '', window.location.pathname + window.location.search);
+        const exchange = await window.fetch('/api/session/exchange', {
+          method: 'POST',
+          credentials: 'same-origin',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ bootstrap_token: bootstrapToken })
+        });
+        if (!exchange.ok) {
+          return false;
+        }
+      }
+
+      const health = await window.fetch('/api/health', { credentials: 'same-origin' });
+      return health.ok;
+    }
+
+    function showSessionHelp() {
+      document.getElementById('accounts-grid').innerHTML = `
+        <div class="col-span-full py-16 text-center rounded-xl border border-dashed border-zinc-800 bg-zinc-900/20">
+          <p class="text-zinc-300 text-sm font-medium">Cần mở phiên quản trị an toàn</p>
+          <p class="text-xs text-zinc-500 mt-1">Chạy <code class="font-mono text-blue-400">agyr</code> trong terminal để mở lại tự động.</p>
+        </div>
+      `;
+    }
+
+    function escapeHtml(value) {
+      return String(value ?? '').replace(/[&<>"']/g, (character) => ({
+        '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+      })[character]);
     }
 
     function toggleAddMenu() {
       const menu = document.getElementById('add-menu');
       menu.classList.toggle('hidden');
-      lucide.createIcons();
     }
 
     function handleOptionOAuth() {
@@ -210,7 +263,7 @@ pub fn get_admin_ui_html() -> &'static str {
 
     async function fetchPreference() {
       try {
-        const res = await fetch('/api/preference', { headers: authHeaders() });
+        const res = await apiFetch('/api/preference');
         const data = await res.json();
         const select = document.getElementById('pref-select');
         if (select) {
@@ -240,9 +293,9 @@ pub fn get_admin_ui_html() -> &'static str {
 
     async function changePreference(prefVal) {
       try {
-        const res = await fetch('/api/preference', {
+        const res = await apiFetch('/api/preference', {
           method: 'POST',
-          headers: authHeaders({ 'Content-Type': 'application/json' }),
+          headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ preference: prefVal })
         });
         if (res.ok) {
@@ -256,7 +309,7 @@ pub fn get_admin_ui_html() -> &'static str {
 
     async function fetchAccounts() {
       try {
-        const res = await fetch('/api/accounts', { headers: authHeaders() });
+        const res = await apiFetch('/api/accounts');
         const accounts = await res.json();
         renderAccounts(accounts);
       } catch (err) {
@@ -278,12 +331,14 @@ pub fn get_admin_ui_html() -> &'static str {
             <p class="text-xs text-zinc-500 mt-0.5">Bấm nút "Thêm tài khoản" ở trên để bắt đầu thêm tài khoản.</p>
           </div>
         `;
-        lucide.createIcons();
         return;
       }
 
       container.innerHTML = accounts.map(acc => {
         const isActive = acc.is_active;
+        const safeEmail = escapeHtml(acc.email);
+        const safeId = escapeHtml(acc.id);
+        const safeInitials = escapeHtml(acc.email.substring(0, 2).toUpperCase());
 
         return `
           <div class="p-4 rounded-xl transition flex flex-col justify-between ${
@@ -299,11 +354,11 @@ pub fn get_admin_ui_html() -> &'static str {
                       ? 'bg-blue-950/80 text-blue-300 border border-blue-500/40'
                       : 'bg-zinc-800 text-zinc-300 border border-zinc-700/60'
                   }">
-                    ${acc.email.substring(0, 2).toUpperCase()}
+                    ${safeInitials}
                   </div>
                   <div class="min-w-0">
-                    <h3 class="font-medium text-xs text-zinc-100 truncate" title="${acc.email}">${acc.email}</h3>
-                    <p class="text-[10px] text-zinc-500 font-mono mt-0.5 truncate">id: ${acc.id.substring(0, 8)}</p>
+                    <h3 class="font-medium text-xs text-zinc-100 truncate" title="${safeEmail}">${safeEmail}</h3>
+                    <p class="text-[10px] text-zinc-500 font-mono mt-0.5 truncate">id: ${escapeHtml(acc.id.substring(0, 8))}</p>
                   </div>
                 </div>
                 <div class="flex items-center gap-2 flex-shrink-0">
@@ -318,7 +373,7 @@ pub fn get_admin_ui_html() -> &'static str {
                           Sẵn sàng
                         </span>`
                   }
-                  <button onclick="deleteAccount('${acc.id}', '${acc.email}')" title="Xóa tài khoản" class="p-1 hover:bg-zinc-800 text-zinc-500 hover:text-red-400 rounded-md transition flex items-center justify-center cursor-pointer">
+                  <button data-account-id="${safeId}" data-account-email="${safeEmail}" title="Xóa tài khoản" class="delete-account-btn p-1 hover:bg-zinc-800 text-zinc-500 hover:text-red-400 rounded-md transition flex items-center justify-center cursor-pointer">
                     <i data-lucide="trash-2" class="w-3.5 h-3.5"></i>
                   </button>
                 </div>
@@ -329,11 +384,13 @@ pub fn get_admin_ui_html() -> &'static str {
                 ${(acc.quota_groups && acc.quota_groups.length > 0) ? acc.quota_groups.map(g => `
                   <div class="space-y-1.5">
                     <div class="text-[11px] font-medium text-zinc-300 flex items-center gap-1">
-                      <span>${g.name}</span>
+                      <span>${escapeHtml(g.name)}</span>
                     </div>
                     <div class="space-y-1.5 bg-zinc-950/60 p-2 rounded-lg border border-zinc-800/60">
                       ${g.buckets.map(b => {
-                        let pct = Math.round(b.remaining_percentage);
+                        let pct = Number.isFinite(b.remaining_percentage)
+                          ? Math.max(0, Math.min(100, Math.round(b.remaining_percentage)))
+                          : 0;
                         const resetInfo = getResetDisplay(b.reset_time, b.window);
                         if (resetInfo.isExpired) {
                           pct = 100;
@@ -342,15 +399,13 @@ pub fn get_admin_ui_html() -> &'static str {
                         return `
                         <div>
                           <div class="flex justify-between text-[10px] text-zinc-400 mb-0.5">
-                            <span>${b.window === 'FIVE_HOUR' ? 'Hạn ngạch 5 giờ' : (b.window === 'WEEKLY' ? 'Hạn ngạch tuần' : b.window)}</span>
+                            <span>${b.window === 'FIVE_HOUR' ? 'Hạn ngạch 5 giờ' : (b.window === 'WEEKLY' ? 'Hạn ngạch tuần' : escapeHtml(b.window))}</span>
                             <span class="font-mono ${isLow ? 'text-amber-400' : 'text-blue-400'} font-medium">${pct}%</span>
                           </div>
-                          <div class="w-full bg-zinc-900 rounded-full h-1 overflow-hidden border border-zinc-800">
-                            <div class="${isLow ? 'bg-amber-400' : 'bg-gradient-to-r from-blue-600 to-sky-400'} h-full rounded-full" style="width: ${pct}%"></div>
-                          </div>
+                          <progress class="quota-progress ${isLow ? 'low' : ''}" max="100" value="${pct}">${pct}%</progress>
                           ${resetInfo.text ? `
                             <div class="text-[9px] text-zinc-500 mt-0.5 font-mono">
-                              ${resetInfo.text}
+                              ${escapeHtml(resetInfo.text)}
                             </div>
                           ` : ''}
                         </div>
@@ -361,11 +416,9 @@ pub fn get_admin_ui_html() -> &'static str {
                   <div class="bg-zinc-950/60 p-2 rounded-lg border border-zinc-800/60">
                     <div class="flex justify-between text-[10px] text-zinc-400 mb-0.5">
                       <span>Hạn ngạch khả dụng</span>
-                      <span class="font-mono font-medium text-blue-400">${Math.round(acc.quota_percentage)}%</span>
+                      <span class="font-mono font-medium text-blue-400">${Number.isFinite(acc.quota_percentage) ? Math.max(0, Math.min(100, Math.round(acc.quota_percentage))) : 0}%</span>
                     </div>
-                    <div class="w-full bg-zinc-900 rounded-full h-1 overflow-hidden border border-zinc-800">
-                      <div class="bg-gradient-to-r from-blue-600 to-sky-400 h-full rounded-full" style="width: ${Math.round(acc.quota_percentage)}%"></div>
-                    </div>
+                    <progress class="quota-progress" max="100" value="${Number.isFinite(acc.quota_percentage) ? Math.max(0, Math.min(100, Math.round(acc.quota_percentage))) : 0}"></progress>
                   </div>
                 `}
               </div>
@@ -378,7 +431,7 @@ pub fn get_admin_ui_html() -> &'static str {
                   <i data-lucide="check" class="w-3.5 h-3.5"></i> Đang hoạt động
                 </div>
               ` : `
-                <button onclick="switchAccount('${acc.id}')" class="w-full py-1.5 px-2 text-center text-xs font-medium rounded-lg bg-zinc-800 hover:bg-zinc-700 text-zinc-200 border border-zinc-700 transition duration-150 flex items-center justify-center gap-1.5 cursor-pointer">
+                <button data-account-id="${safeId}" class="switch-account-btn w-full py-1.5 px-2 text-center text-xs font-medium rounded-lg bg-zinc-800 hover:bg-zinc-700 text-zinc-200 border border-zinc-700 transition duration-150 flex items-center justify-center gap-1.5 cursor-pointer">
                   <i data-lucide="arrow-right-left" class="w-3.5 h-3.5 text-zinc-400"></i> Chuyển sang tài khoản này
                 </button>
               `}
@@ -386,14 +439,13 @@ pub fn get_admin_ui_html() -> &'static str {
           </div>
         `;
       }).join('');
-      lucide.createIcons();
     }
 
     async function switchAccount(accountId) {
       try {
-        const res = await fetch('/api/accounts/switch', {
+        const res = await apiFetch('/api/accounts/switch', {
           method: 'POST',
-          headers: authHeaders({ 'Content-Type': 'application/json' }),
+          headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ account_id: accountId })
         });
         const data = await res.json();
@@ -412,9 +464,9 @@ pub fn get_admin_ui_html() -> &'static str {
         return;
       }
       try {
-        const res = await fetch('/api/accounts/delete', {
+        const res = await apiFetch('/api/accounts/delete', {
           method: 'POST',
-          headers: authHeaders({ 'Content-Type': 'application/json' }),
+          headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ account_id: accountId })
         });
         const data = await res.json();
@@ -471,7 +523,7 @@ pub fn get_admin_ui_html() -> &'static str {
 
     async function startOAuthLogin() {
       try {
-        const res = await fetch('/api/accounts/oauth/start', { headers: authHeaders() });
+        const res = await apiFetch('/api/accounts/oauth/start');
         const data = await res.json();
         if (data.auth_url) {
           window.open(data.auth_url, '_blank');
@@ -500,9 +552,9 @@ pub fn get_admin_ui_html() -> &'static str {
       }
 
       try {
-        const res = await fetch('/api/accounts/add', {
+        const res = await apiFetch('/api/accounts/add', {
           method: 'POST',
-          headers: authHeaders({ 'Content-Type': 'application/json' }),
+          headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ email, access_token, refresh_token })
         });
         if (res.ok) {
@@ -516,14 +568,76 @@ pub fn get_admin_ui_html() -> &'static str {
       }
     }
 
-    fetchAccounts();
-    fetchPreference();
-    setInterval(() => {
+    document.getElementById('refresh-btn').addEventListener('click', () => {
       fetchAccounts();
       fetchPreference();
+    });
+    document.getElementById('add-account-btn').addEventListener('click', toggleAddMenu);
+    document.getElementById('oauth-option-btn').addEventListener('click', handleOptionOAuth);
+    document.getElementById('direct-option-btn').addEventListener('click', handleOptionDirectToken);
+    document.getElementById('pref-select').addEventListener('change', (event) => changePreference(event.target.value));
+    document.getElementById('close-add-modal-btn').addEventListener('click', closeDirectAddModal);
+    document.getElementById('cancel-add-btn').addEventListener('click', closeDirectAddModal);
+    document.getElementById('save-add-btn').addEventListener('click', submitDirectAdd);
+    document.getElementById('modal-oauth-btn').addEventListener('click', () => {
+      closeDirectAddModal();
+      startOAuthLogin();
+    });
+    document.getElementById('accounts-grid').addEventListener('click', (event) => {
+      const deleteButton = event.target.closest('.delete-account-btn');
+      if (deleteButton) {
+        deleteAccount(deleteButton.dataset.accountId, deleteButton.dataset.accountEmail);
+        return;
+      }
+      const switchButton = event.target.closest('.switch-account-btn');
+      if (switchButton) {
+        switchAccount(switchButton.dataset.accountId);
+      }
+    });
+
+    document.getElementById('relay-address').innerText = window.location.host;
+
+    async function initializeDashboard() {
+      try {
+        SESSION_READY = await establishBrowserSession();
+      } catch (error) {
+        console.error('Failed to establish browser session:', error);
+        SESSION_READY = false;
+      }
+      if (!SESSION_READY) {
+        showSessionHelp();
+        return;
+      }
+      fetchAccounts();
+      fetchPreference();
+    }
+
+    initializeDashboard();
+    setInterval(() => {
+      if (SESSION_READY) {
+        fetchAccounts();
+        fetchPreference();
+      }
     }, 5000);
   </script>
 </body>
 </html>
 "#
+}
+
+#[cfg(test)]
+mod tests {
+    use super::get_admin_ui_html;
+
+    #[test]
+    fn admin_ui_contains_no_embedded_secret_or_remote_script() {
+        let html = get_admin_ui_html();
+        assert!(!html.contains("MASTER_KEY"));
+        assert!(!html.contains("<script src="));
+        assert!(!html.contains("onclick="));
+        assert!(!html.contains("onchange="));
+        assert!(!html.contains("sessionStorage"));
+        assert!(!html.contains("window.prompt"));
+        assert!(html.contains("/api/session/exchange"));
+    }
 }

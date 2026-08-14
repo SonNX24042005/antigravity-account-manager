@@ -1,8 +1,9 @@
-use std::fs;
-use anyhow::Result;
 use crate::models::Account;
 use crate::storage::ide_db::IdeDbSync;
 use crate::storage::keyring_sync::KeyringSync;
+use crate::storage::secure_file;
+use anyhow::Result;
+use std::fs;
 
 pub struct AccountSwitcher;
 
@@ -44,12 +45,7 @@ impl AccountSwitcher {
             let _ = fs::create_dir_all(&ant_dir);
             for name in ["auth.json", "credentials.json"] {
                 let p = ant_dir.join(name);
-                let _ = fs::write(&p, &auth_str);
-                #[cfg(unix)]
-                {
-                    use std::os::unix::fs::PermissionsExt;
-                    let _ = fs::set_permissions(&p, fs::Permissions::from_mode(0o600));
-                }
+                secure_file::atomic_write(&p, auth_str.as_bytes(), 0o600)?;
             }
 
             // Locations for ~/.gemini/antigravity-cli
@@ -57,12 +53,7 @@ impl AccountSwitcher {
             let _ = fs::create_dir_all(&gemini_cli_dir);
             for name in ["auth.json", "credentials.json"] {
                 let p = gemini_cli_dir.join(name);
-                let _ = fs::write(&p, &auth_str);
-                #[cfg(unix)]
-                {
-                    use std::os::unix::fs::PermissionsExt;
-                    let _ = fs::set_permissions(&p, fs::Permissions::from_mode(0o600));
-                }
+                secure_file::atomic_write(&p, auth_str.as_bytes(), 0o600)?;
             }
 
             // Clean proxy settings from config.json and settings.json so agy runs natively
@@ -71,7 +62,9 @@ impl AccountSwitcher {
 
             for file in [config_file, settings_file] {
                 if file.exists() {
-                    let mut json: serde_json::Value = serde_json::from_str(&fs::read_to_string(&file).unwrap_or_default()).unwrap_or_else(|_| serde_json::json!({}));
+                    let mut json: serde_json::Value =
+                        serde_json::from_str(&fs::read_to_string(&file).unwrap_or_default())
+                            .unwrap_or_else(|_| serde_json::json!({}));
                     if let Some(obj) = json.as_object_mut() {
                         obj.remove("proxy");
                         obj.remove("http_proxy");
@@ -80,7 +73,9 @@ impl AccountSwitcher {
                         obj.remove("GOOGLE_GEMINI_BASE_URL");
                         obj.remove("security");
                     }
-                    let _ = fs::write(&file, serde_json::to_string_pretty(&json)?);
+                    let json = serde_json::to_string_pretty(&json)?;
+                    let mode = secure_file::existing_mode_or(&file, 0o600);
+                    secure_file::atomic_write(&file, json.as_bytes(), mode)?;
                 }
             }
 
@@ -88,7 +83,10 @@ impl AccountSwitcher {
             Self::clean_shell_profiles();
         }
 
-        tracing::info!("[AccountSwitcher] Switched active account to: {}", account.email);
+        tracing::info!(
+            "[AccountSwitcher] Switched active account to: {}",
+            account.email
+        );
         Ok(())
     }
 
@@ -101,18 +99,93 @@ impl AccountSwitcher {
         for profile_path in [home.join(".bashrc"), home.join(".zshrc")] {
             if profile_path.exists() {
                 if let Ok(content) = fs::read_to_string(&profile_path) {
-                    let new_lines: Vec<&str> = content
-                        .lines()
-                        .filter(|line| {
-                            !line.contains("GOOGLE_GEMINI_BASE_URL")
-                                && !line.contains("ANTIGRAVITY_BASE_URL")
-                                && !line.contains("Antigravity Relay Proxy Config")
-                                && !(line.contains("8045") && (line.contains("HTTP_PROXY") || line.contains("HTTPS_PROXY")))
-                        })
-                        .collect();
-                    let _ = fs::write(profile_path, new_lines.join("\n"));
+                    let new_content = Self::remove_managed_proxy_block(&content);
+                    if new_content == content {
+                        continue;
+                    }
+                    let mode = secure_file::existing_mode_or(&profile_path, 0o600);
+                    if let Err(error) = secure_file::backup(&profile_path) {
+                        tracing::warn!(
+                            "[AccountSwitcher] Refusing to update {:?} without a backup: {}",
+                            profile_path,
+                            error
+                        );
+                        continue;
+                    }
+                    if let Err(error) =
+                        secure_file::atomic_write(&profile_path, new_content.as_bytes(), mode)
+                    {
+                        tracing::warn!(
+                            "[AccountSwitcher] Failed to update {:?}: {}",
+                            profile_path,
+                            error
+                        );
+                    }
                 }
             }
         }
+    }
+
+    fn remove_managed_proxy_block(content: &str) -> String {
+        const START: &str = "# Antigravity Relay Proxy Config";
+        const END: &str = "# End Antigravity Relay Proxy Config";
+        let mut output = Vec::new();
+        let mut in_managed_block = false;
+        let mut legacy_exports_left = 0_u8;
+
+        for line in content.lines() {
+            let trimmed = line.trim();
+            if trimmed == START {
+                in_managed_block = true;
+                legacy_exports_left = 2;
+                continue;
+            }
+            if in_managed_block && trimmed == END {
+                in_managed_block = false;
+                legacy_exports_left = 0;
+                continue;
+            }
+            if in_managed_block && legacy_exports_left == 0 {
+                in_managed_block = false;
+            }
+            if in_managed_block {
+                let is_managed_export = trimmed.starts_with("export GOOGLE_GEMINI_BASE_URL=")
+                    || trimmed.starts_with("export ANTIGRAVITY_BASE_URL=");
+                if is_managed_export && legacy_exports_left > 0 {
+                    legacy_exports_left -= 1;
+                    continue;
+                }
+                in_managed_block = false;
+                legacy_exports_left = 0;
+            }
+            output.push(line);
+        }
+
+        let mut result = output.join("\n");
+        if content.ends_with('\n') && !result.is_empty() {
+            result.push('\n');
+        }
+        result
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::AccountSwitcher;
+
+    #[test]
+    fn removes_only_the_managed_shell_block() {
+        let input = "export GOOGLE_GEMINI_BASE_URL=https://custom.example\n\
+# Antigravity Relay Proxy Config\n\
+export GOOGLE_GEMINI_BASE_URL=http://127.0.0.1:8045/v1\n\
+export ANTIGRAVITY_BASE_URL=http://127.0.0.1:8045/v1\n\
+# End Antigravity Relay Proxy Config\n\
+export HTTPS_PROXY=http://127.0.0.1:8045\n";
+        let output = AccountSwitcher::remove_managed_proxy_block(input);
+
+        assert!(output.contains("https://custom.example"));
+        assert!(output.contains("export HTTPS_PROXY=http://127.0.0.1:8045"));
+        assert!(!output.contains("# Antigravity Relay Proxy Config"));
+        assert!(!output.contains("export ANTIGRAVITY_BASE_URL="));
     }
 }

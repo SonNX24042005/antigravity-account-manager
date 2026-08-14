@@ -26,7 +26,7 @@ curl -fsSL https://raw.githubusercontent.com/SonNX24042005/antigravity-account-m
 
 *(Hoặc nếu đã tải mã nguồn về máy, bạn có thể chạy trực tiếp `./install.sh`)*
 
-Lệnh này sẽ tự động tải hoặc biên dịch và cài đặt lệnh điều khiển toàn cục **`agyr`** (và `antigravity-relay`) vào `~/.local/bin/`. Sau khi cài, bạn có thể gõ `agyr` ở bất kỳ thư mục nào trong terminal.
+Lệnh này tự động tải, xác minh checksum, cài đặt, khởi động dịch vụ và mở bảng điều khiển. Người dùng không phải nhập master key. Những lần sau chỉ cần chạy `agyr` để mở lại bảng điều khiển với một phiên đăng nhập an toàn mới.
 
 ### 2. Các tùy chọn khởi chạy
 

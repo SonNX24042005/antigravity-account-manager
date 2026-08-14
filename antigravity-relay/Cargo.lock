@@ -61,6 +61,8 @@ dependencies = [
  "rusqlite",
  "serde",
  "serde_json",
+ "sha2",
+ "subtle",
  "tokio",
  "tokio-stream",
  "tower-http 0.5.2",

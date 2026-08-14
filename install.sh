@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-set -e
+set -euo pipefail
 
 # ==============================================================================
 #  Antigravity Relay 1-Line Installer (agyr)
@@ -36,36 +36,58 @@ if [ -n "$SCRIPT_DIR" ] && [ -d "$SCRIPT_DIR/antigravity-relay" ]; then
     (cd "$SCRIPT_DIR/antigravity-relay" && cargo build --release -j 2)
     cp -f "$SCRIPT_DIR/antigravity-relay/target/release/antigravity-relay" "$INSTALL_DIR/antigravity-relay"
 else
-    # 2. Remote curl execution: Try downloading prebuilt binary from GitHub Release first
-    DOWNLOAD_SUCCESS=false
+    # 2. Download a release artifact and its checksum. Fail closed if either is absent.
     RELEASE_URL="https://github.com/${REPO}/releases/latest/download/antigravity-relay-${OS}-${TARGET_ARCH}.tar.gz"
+    CHECKSUM_URL="${RELEASE_URL}.sha256"
     
     echo "[download] Dang tai ban phat hanh tu GitHub..."
     TMP_DIR="$(mktemp -d)"
-    if curl -fsSL "$RELEASE_URL" -o "$TMP_DIR/antigravity-relay.tar.gz" 2>/dev/null; then
-        tar -xzf "$TMP_DIR/antigravity-relay.tar.gz" -C "$TMP_DIR"
-        if [ -f "$TMP_DIR/antigravity-relay" ]; then
-            cp -f "$TMP_DIR/antigravity-relay" "$INSTALL_DIR/antigravity-relay"
-            DOWNLOAD_SUCCESS=true
-        fi
-    fi
-    rm -rf "$TMP_DIR"
+    ARCHIVE="$TMP_DIR/antigravity-relay.tar.gz"
+    CHECKSUM_FILE="$TMP_DIR/antigravity-relay.tar.gz.sha256"
+    cleanup() {
+        rm -rf "$TMP_DIR"
+    }
+    trap cleanup EXIT
 
-    # 3. Fallback: Build from git repository if prebuilt binary is not available yet
-    if [ "$DOWNLOAD_SUCCESS" != "true" ]; then
-        if command -v cargo >/dev/null 2>&1 && command -v git >/dev/null 2>&1; then
-            echo "[build] Khong tim thay pre-built binary, dang bien dich tu GitHub repo..."
-            TMP_SRC="$(mktemp -d)"
-            git clone --depth 1 "https://github.com/${REPO}.git" "$TMP_SRC/repo"
-            (cd "$TMP_SRC/repo/antigravity-relay" && cargo build --release -j 2)
-            cp -f "$TMP_SRC/repo/antigravity-relay/target/release/antigravity-relay" "$INSTALL_DIR/antigravity-relay"
-            rm -rf "$TMP_SRC"
-        else
-            echo "[error] Khong the tai ban phat hanh va may chua cai dat 'cargo' / 'git'."
-            echo "        Vui long cai dat Rust (https://rustup.rs) hoac clone repo de build."
-            exit 1
-        fi
+    curl --proto '=https' --tlsv1.2 -fsSL --retry 3 --max-time 120 "$RELEASE_URL" -o "$ARCHIVE"
+    curl --proto '=https' --tlsv1.2 -fsSL --retry 3 --max-time 120 "$CHECKSUM_URL" -o "$CHECKSUM_FILE"
+
+    EXPECTED_SHA256="$(awk 'NR == 1 { print $1 }' "$CHECKSUM_FILE")"
+    if [[ ! "$EXPECTED_SHA256" =~ ^[[:xdigit:]]{64}$ ]]; then
+        echo "[error] File checksum SHA-256 khong hop le."
+        exit 1
     fi
+
+    if command -v sha256sum >/dev/null 2>&1; then
+        ACTUAL_SHA256="$(sha256sum "$ARCHIVE" | awk '{ print $1 }')"
+    elif command -v shasum >/dev/null 2>&1; then
+        ACTUAL_SHA256="$(shasum -a 256 "$ARCHIVE" | awk '{ print $1 }')"
+    else
+        echo "[error] Can sha256sum hoac shasum de xac minh ban phat hanh."
+        exit 1
+    fi
+
+    if [ "${ACTUAL_SHA256,,}" != "${EXPECTED_SHA256,,}" ]; then
+        echo "[error] Checksum SHA-256 khong khop. Da huy cai dat."
+        exit 1
+    fi
+
+    ARCHIVE_ENTRIES="$(tar -tzf "$ARCHIVE")"
+    ENTRY_COUNT="$(printf '%s\n' "$ARCHIVE_ENTRIES" | sed '/^[[:space:]]*$/d' | wc -l)"
+    ONLY_ENTRY="$(printf '%s\n' "$ARCHIVE_ENTRIES" | sed '/^[[:space:]]*$/d;s#^\./##')"
+    if [ "$ENTRY_COUNT" -ne 1 ] || [ "$ONLY_ENTRY" != "antigravity-relay" ]; then
+        echo "[error] Goi cap nhat chua duong dan khong mong doi."
+        exit 1
+    fi
+
+    tar -xzf "$ARCHIVE" -C "$TMP_DIR"
+    if [ ! -f "$TMP_DIR/antigravity-relay" ] || [ -L "$TMP_DIR/antigravity-relay" ]; then
+        echo "[error] Binary trong goi cap nhat khong hop le."
+        exit 1
+    fi
+    cp -f "$TMP_DIR/antigravity-relay" "$INSTALL_DIR/antigravity-relay"
+    cleanup
+    trap - EXIT
 fi
 
 chmod +x "$INSTALL_DIR/antigravity-relay"
@@ -95,3 +117,8 @@ echo "  agyr version      Xem phien ban hien tai"
 echo "  agyr disable      Tat tu khoi dong cung may"
 echo ""
 echo "Bang dieu khien: http://127.0.0.1:8045"
+echo ""
+echo "[start] Dang khoi dong va mo bang dieu khien..."
+if ! "$INSTALL_DIR/agyr"; then
+    echo "[warning] Khong the tu dong mo trinh duyet. Hay chay lenh 'agyr' de thu lai."
+fi

@@ -1,10 +1,10 @@
-use std::sync::Arc;
-use tokio::sync::RwLock;
 use crate::models::Account;
 use crate::proxy::model_detector::{ModelDetector, TargetModelCategory};
 use crate::storage::{AccountStore, AccountSwitcher};
 use anyhow::{anyhow, Result};
 use rand::Rng;
+use std::sync::Arc;
+use tokio::sync::RwLock;
 
 #[derive(Clone)]
 pub struct TokenManager {
@@ -14,15 +14,20 @@ pub struct TokenManager {
 }
 
 impl TokenManager {
-    pub fn new(store: AccountStore) -> Self {
+    const MAX_ACCOUNTS: usize = 100;
+
+    pub fn new(store: AccountStore, data_dir: std::path::PathBuf) -> Self {
         let store_arc = Arc::new(store);
         let loaded = store_arc.load_all().unwrap_or_default();
-        tracing::info!("[TokenManager] Loaded {} accounts into token pool", loaded.len());
+        tracing::info!(
+            "[TokenManager] Loaded {} accounts into token pool",
+            loaded.len()
+        );
 
         Self {
             accounts: Arc::new(RwLock::new(loaded)),
             store: store_arc,
-            model_detector: Arc::new(ModelDetector::new()),
+            model_detector: Arc::new(ModelDetector::new(data_dir)),
         }
     }
 
@@ -57,18 +62,35 @@ impl TokenManager {
     }
 
     pub async fn add_account(&self, account: Account) -> Result<()> {
-        self.store.save(&account)?;
         let mut list = self.accounts.write().await;
+        let existing = list
+            .iter()
+            .find(|item| item.email == account.email)
+            .cloned();
+        anyhow::ensure!(
+            existing.is_some() || list.len() < Self::MAX_ACCOUNTS,
+            "Account limit reached ({})",
+            Self::MAX_ACCOUNTS
+        );
+
+        self.store.save(&account)?;
+        if let Some(previous) = existing {
+            if previous.id != account.id {
+                self.store.delete(&previous.id)?;
+            }
+        }
         list.retain(|a| a.email != account.email);
         list.push(account.clone());
         tracing::info!("[TokenManager] Added/Updated account to pool");
-        
+
         let _ = crate::storage::AccountSwitcher::switch_active_account(&account);
         Ok(())
     }
 
     /// Automatically selects and switches to the account with the highest quota for the currently active model category
-    pub async fn select_best_account_for_active_model(&self) -> Result<(Account, TargetModelCategory)> {
+    pub async fn select_best_account_for_active_model(
+        &self,
+    ) -> Result<(Account, TargetModelCategory)> {
         self.sync_active_account_from_disk().await;
         let list = self.accounts.read().await.clone();
         if list.is_empty() {
@@ -77,18 +99,23 @@ impl TokenManager {
 
         let target_category = self.model_detector.get_effective_category();
 
-        let best = list.into_iter().max_by(|a, b| {
-            let score_a = match target_category {
-                TargetModelCategory::Gemini => a.get_gemini_5h_quota(),
-                TargetModelCategory::ClaudeAndGpt => a.get_claude_gpt_quota(),
-            };
-            let score_b = match target_category {
-                TargetModelCategory::Gemini => b.get_gemini_5h_quota(),
-                TargetModelCategory::ClaudeAndGpt => b.get_claude_gpt_quota(),
-            };
+        let best = list
+            .into_iter()
+            .max_by(|a, b| {
+                let score_a = match target_category {
+                    TargetModelCategory::Gemini => a.get_gemini_5h_quota(),
+                    TargetModelCategory::ClaudeAndGpt => a.get_claude_gpt_quota(),
+                };
+                let score_b = match target_category {
+                    TargetModelCategory::Gemini => b.get_gemini_5h_quota(),
+                    TargetModelCategory::ClaudeAndGpt => b.get_claude_gpt_quota(),
+                };
 
-            score_a.partial_cmp(&score_b).unwrap_or(std::cmp::Ordering::Equal)
-        }).ok_or_else(|| anyhow!("Failed to select best account"))?;
+                score_a
+                    .partial_cmp(&score_b)
+                    .unwrap_or(std::cmp::Ordering::Equal)
+            })
+            .ok_or_else(|| anyhow!("Failed to select best account"))?;
 
         AccountSwitcher::switch_active_account(&best)?;
         tracing::info!(
@@ -121,7 +148,7 @@ impl TokenManager {
             } else {
                 acc.is_active = false;
             }
-            let _ = self.store.save(acc);
+            self.store.save(acc)?;
         }
 
         if let Some(acc) = target_account {
@@ -135,10 +162,13 @@ impl TokenManager {
     pub async fn delete_account(&self, target_id_or_email: &str) -> Result<String> {
         let removed_account = {
             let mut list = self.accounts.write().await;
-            let pos = list.iter().position(|a| a.id == target_id_or_email || a.email == target_id_or_email);
+            let pos = list
+                .iter()
+                .position(|a| a.id == target_id_or_email || a.email == target_id_or_email);
             if let Some(index) = pos {
-                let removed = list.remove(index);
-                let _ = self.store.delete(&removed.id);
+                let removed = list[index].clone();
+                self.store.delete(&removed.id)?;
+                list.remove(index);
                 tracing::info!("[TokenManager] Deleted account: {}", removed.email);
                 Some(removed)
             } else {
@@ -164,7 +194,9 @@ impl TokenManager {
             .collect();
 
         if available.is_empty() {
-            return Err(anyhow!("No active, non-rate-limited accounts available in pool!"));
+            return Err(anyhow!(
+                "No active, non-rate-limited accounts available in pool!"
+            ));
         }
 
         if available.len() == 1 {
@@ -217,7 +249,10 @@ impl TokenManager {
             // 1. Auto-refresh OAuth token if expired
             let mut token_refreshed = false;
             if account.is_token_expired() && !account.refresh_token.is_empty() {
-                if let Ok(token_resp) = crate::oauth::GoogleOAuth::refresh_access_token(client, &account.refresh_token).await {
+                if let Ok(token_resp) =
+                    crate::oauth::GoogleOAuth::refresh_access_token(client, &account.refresh_token)
+                        .await
+                {
                     account.access_token = token_resp.access_token;
                     if let Some(new_refresh) = token_resp.refresh_token {
                         account.refresh_token = new_refresh;
@@ -225,12 +260,20 @@ impl TokenManager {
                     let expires_in = token_resp.expires_in.unwrap_or(3600);
                     account.expires_at = chrono::Utc::now() + chrono::Duration::seconds(expires_in);
                     token_refreshed = true;
-                    tracing::info!("[TokenManager] Successfully refreshed token for {}", account.email);
+                    tracing::info!(
+                        "[TokenManager] Successfully refreshed token for {}",
+                        account.email
+                    );
                 }
             }
 
             // 2. Fetch latest quota from Google CloudCode PA API
-            let (overall_pct, groups) = crate::proxy::quota::QuotaFetcher::fetch_account_quota_full(client, &account.access_token).await;
+            let (overall_pct, groups) =
+                crate::proxy::quota::QuotaFetcher::fetch_account_quota_full(
+                    client,
+                    &account.access_token,
+                )
+                .await;
             if let Some(pct) = overall_pct {
                 account.quota_percentage = pct;
             }

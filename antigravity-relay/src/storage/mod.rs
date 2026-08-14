@@ -1,9 +1,10 @@
 pub mod account_store;
-pub mod ide_db;
 pub mod account_switcher;
+pub mod ide_db;
 pub mod keyring_sync;
+pub mod secure_file;
 
 pub use account_store::AccountStore;
-pub use ide_db::IdeDbSync;
 pub use account_switcher::AccountSwitcher;
+pub use ide_db::IdeDbSync;
 pub use keyring_sync::KeyringSync;

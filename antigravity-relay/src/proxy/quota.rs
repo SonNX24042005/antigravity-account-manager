@@ -1,6 +1,7 @@
+use crate::models::account::{QuotaBucketInfo, QuotaGroupInfo};
+use futures_util::StreamExt;
 use reqwest::Client;
 use serde_json::Value;
-use crate::models::account::{QuotaBucketInfo, QuotaGroupInfo};
 
 #[allow(dead_code)]
 pub struct QuotaFetcher;
@@ -34,16 +35,22 @@ impl QuotaFetcher {
 
             if let Ok(resp) = res {
                 if resp.status().is_success() {
-                    if let Ok(json_data) = resp.json::<Value>().await {
+                    if let Some(json_data) = Self::read_limited_json(resp, 1024 * 1024).await {
                         if let Some(models) = json_data["models"].as_object() {
                             let mut min_percentage: Option<f64> = None;
 
                             for (_model_id, info) in models {
-                                if let Some(fraction) = info["quotaInfo"]["remainingFraction"].as_f64() {
+                                if let Some(fraction) =
+                                    info["quotaInfo"]["remainingFraction"].as_f64()
+                                {
                                     let pct = (fraction * 100.0).round();
-                                    min_percentage = Some(min_percentage.map_or(pct, |m| m.min(pct)));
-                                } else if let Some(pct) = info["quotaInfo"]["remainingPercentage"].as_f64() {
-                                    min_percentage = Some(min_percentage.map_or(pct, |m| m.min(pct)));
+                                    min_percentage =
+                                        Some(min_percentage.map_or(pct, |m| m.min(pct)));
+                                } else if let Some(pct) =
+                                    info["quotaInfo"]["remainingPercentage"].as_f64()
+                                {
+                                    min_percentage =
+                                        Some(min_percentage.map_or(pct, |m| m.min(pct)));
                                 }
                             }
 
@@ -77,7 +84,7 @@ impl QuotaFetcher {
 
             if let Ok(resp) = res {
                 if resp.status().is_success() {
-                    if let Ok(json_data) = resp.json::<Value>().await {
+                    if let Some(json_data) = Self::read_limited_json(resp, 1024 * 1024).await {
                         if let Some(groups) = json_data["groups"].as_array() {
                             let mut result = Vec::new();
 
@@ -90,9 +97,11 @@ impl QuotaFetcher {
                                 let mut buckets = Vec::new();
                                 if let Some(b_arr) = group["buckets"].as_array() {
                                     for b in b_arr {
-                                        let window = b["window"].as_str().unwrap_or("WINDOW").to_string();
+                                        let window =
+                                            b["window"].as_str().unwrap_or("WINDOW").to_string();
                                         let frac = b["remainingFraction"].as_f64().unwrap_or(0.0);
-                                        let reset_time = b["resetTime"].as_str().map(|s| s.to_string());
+                                        let reset_time =
+                                            b["resetTime"].as_str().map(|s| s.to_string());
 
                                         buckets.push(QuotaBucketInfo {
                                             window,
@@ -115,5 +124,25 @@ impl QuotaFetcher {
         }
 
         Vec::new()
+    }
+
+    async fn read_limited_json(response: reqwest::Response, max_bytes: usize) -> Option<Value> {
+        if response
+            .content_length()
+            .is_some_and(|length| length > max_bytes as u64)
+        {
+            return None;
+        }
+
+        let mut body = Vec::new();
+        let mut stream = response.bytes_stream();
+        while let Some(chunk) = stream.next().await {
+            let chunk = chunk.ok()?;
+            if body.len().saturating_add(chunk.len()) > max_bytes {
+                return None;
+            }
+            body.extend_from_slice(&chunk);
+        }
+        serde_json::from_slice(&body).ok()
     }
 }

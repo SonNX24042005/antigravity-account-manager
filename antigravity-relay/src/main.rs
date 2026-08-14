@@ -37,7 +37,7 @@ async fn main() -> anyhow::Result<()> {
 
     // 3. Initialize Account Storage & Token Pool
     let store = AccountStore::new(config.accounts_dir());
-    let token_manager = TokenManager::new(store);
+    let token_manager = TokenManager::new(store, config.data_dir.clone());
 
     // 4. Start Axum Web Server & Account Manager
     Server::run(config, token_manager).await?;

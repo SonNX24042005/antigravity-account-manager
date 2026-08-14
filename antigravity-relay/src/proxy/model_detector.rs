@@ -1,8 +1,9 @@
+use crate::storage::secure_file;
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fs;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
-use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum TargetModelCategory {
@@ -46,10 +47,7 @@ pub struct ModelDetector {
 }
 
 impl ModelDetector {
-    pub fn new() -> Self {
-        let base_dir = dirs::home_dir()
-            .unwrap_or_else(|| PathBuf::from("."))
-            .join(".antigravity-relay");
+    pub fn new(base_dir: PathBuf) -> Self {
         let _ = fs::create_dir_all(&base_dir);
         let state_file = base_dir.join("routing_preference.json");
 
@@ -103,10 +101,10 @@ impl ModelDetector {
         let mut state = self.cached_state.lock().unwrap();
         state.preference = pref;
         state.last_updated_at = chrono::Utc::now().timestamp();
-        
+
         let to_save = state.clone();
         if let Ok(json_str) = serde_json::to_string_pretty(&to_save) {
-            let _ = fs::write(&self.state_file, json_str);
+            let _ = secure_file::atomic_write(&self.state_file, json_str.as_bytes(), 0o600);
         }
         to_save
     }
@@ -123,17 +121,26 @@ impl ModelDetector {
             if claude_consumed > 0.5 && claude_consumed > gemini_consumed {
                 self.update_detected_category(
                     TargetModelCategory::ClaudeAndGpt,
-                    format!("Phát hiện tiêu hao hạn ngạch Claude/GPT (-{:.1}%)", claude_consumed),
+                    format!(
+                        "Phát hiện tiêu hao hạn ngạch Claude/GPT (-{:.1}%)",
+                        claude_consumed
+                    ),
                 );
             } else if gemini_consumed > 0.5 && gemini_consumed >= claude_consumed {
                 self.update_detected_category(
                     TargetModelCategory::Gemini,
-                    format!("Phát hiện tiêu hao hạn ngạch Gemini (-{:.1}%)", gemini_consumed),
+                    format!(
+                        "Phát hiện tiêu hao hạn ngạch Gemini (-{:.1}%)",
+                        gemini_consumed
+                    ),
                 );
             }
         }
 
-        hist.insert(account_id.to_string(), (current_gemini, current_claude, now));
+        hist.insert(
+            account_id.to_string(),
+            (current_gemini, current_claude, now),
+        );
     }
 
     fn update_detected_category(&self, cat: TargetModelCategory, source: String) {
@@ -144,7 +151,7 @@ impl ModelDetector {
 
         let to_save = state.clone();
         if let Ok(json_str) = serde_json::to_string_pretty(&to_save) {
-            let _ = fs::write(&self.state_file, json_str);
+            let _ = secure_file::atomic_write(&self.state_file, json_str.as_bytes(), 0o600);
         }
     }
 
@@ -162,7 +169,11 @@ impl ModelDetector {
 
         if let Ok(entries) = fs::read_dir(&brain_dir) {
             for entry in entries.flatten() {
-                let log_file = entry.path().join(".system_generated").join("logs").join("transcript.jsonl");
+                let log_file = entry
+                    .path()
+                    .join(".system_generated")
+                    .join("logs")
+                    .join("transcript.jsonl");
                 if log_file.exists() {
                     if let Ok(meta) = log_file.metadata() {
                         if let Ok(mtime) = meta.modified() {
@@ -198,7 +209,13 @@ impl ModelDetector {
 
         for line in scan_lines.iter().rev() {
             let lower = line.to_lowercase();
-            if lower.contains("claude") || lower.contains("sonnet") || lower.contains("haiku") || lower.contains("opus") || lower.contains("gpt-4") || lower.contains("gpt-o") {
+            if lower.contains("claude")
+                || lower.contains("sonnet")
+                || lower.contains("haiku")
+                || lower.contains("opus")
+                || lower.contains("gpt-4")
+                || lower.contains("gpt-o")
+            {
                 return Some((
                     TargetModelCategory::ClaudeAndGpt,
                     "Phát hiện qua phiên hội thoại gần nhất (Claude / GPT)".to_string(),
