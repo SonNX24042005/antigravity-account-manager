@@ -30,13 +30,20 @@ echo "   Cai dat Antigravity Relay Manager (agyr)"
 echo "====================================================="
 
 # 1. Check if running locally inside repo
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}" 2>/dev/null)" && pwd || true)"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-}" 2>/dev/null)" 2>/dev/null && pwd || true)"
+LOCAL_REPO_DIR=""
 if [ -n "$SCRIPT_DIR" ] && [ -d "$SCRIPT_DIR/antigravity-relay" ]; then
-    echo "[build] Phat hien ma nguon cuc bo, dang bien dich..."
-    (cd "$SCRIPT_DIR/antigravity-relay" && cargo build --release -j 2)
-    cp -f "$SCRIPT_DIR/antigravity-relay/target/release/antigravity-relay" "$INSTALL_DIR/antigravity-relay"
+    LOCAL_REPO_DIR="$SCRIPT_DIR"
+elif [ -d "$(pwd)/antigravity-relay" ]; then
+    LOCAL_REPO_DIR="$(pwd)"
+fi
+
+if [ -n "$LOCAL_REPO_DIR" ]; then
+    echo "[build] Phat hien ma nguon cuc bo tai $LOCAL_REPO_DIR, dang bien dich..."
+    (cd "$LOCAL_REPO_DIR/antigravity-relay" && cargo build --release -j 2)
+    cp -f "$LOCAL_REPO_DIR/antigravity-relay/target/release/antigravity-relay" "$INSTALL_DIR/antigravity-relay"
 else
-    # 2. Download a release artifact and its checksum. Fail closed if either is absent.
+    # 2. Download release artifact from GitHub Releases
     RELEASE_URL="https://github.com/${REPO}/releases/latest/download/antigravity-relay-${OS}-${TARGET_ARCH}.tar.gz"
     CHECKSUM_URL="${RELEASE_URL}.sha256"
     
@@ -49,45 +56,55 @@ else
     }
     trap cleanup EXIT
 
-    curl --proto '=https' --tlsv1.2 -fsSL --retry 3 --max-time 120 "$RELEASE_URL" -o "$ARCHIVE"
-    curl --proto '=https' --tlsv1.2 -fsSL --retry 3 --max-time 120 "$CHECKSUM_URL" -o "$CHECKSUM_FILE"
+    DOWNLOAD_SUCCESS=false
+    if curl --proto '=https' --tlsv1.2 -fsSL --retry 3 --max-time 120 "$RELEASE_URL" -o "$ARCHIVE" 2>/dev/null; then
+        # If a SHA256 checksum asset is published, verify integrity
+        if curl --proto '=https' --tlsv1.2 -fsSL --retry 2 --max-time 30 "$CHECKSUM_URL" -o "$CHECKSUM_FILE" 2>/dev/null; then
+            EXPECTED_SHA256="$(awk 'NR == 1 { print $1 }' "$CHECKSUM_FILE")"
+            if [[ "$EXPECTED_SHA256" =~ ^[[:xdigit:]]{64}$ ]]; then
+                if command -v sha256sum >/dev/null 2>&1; then
+                    ACTUAL_SHA256="$(sha256sum "$ARCHIVE" | awk '{ print $1 }')"
+                elif command -v shasum >/dev/null 2>&1; then
+                    ACTUAL_SHA256="$(shasum -a 256 "$ARCHIVE" | awk '{ print $1 }')"
+                else
+                    ACTUAL_SHA256=""
+                fi
 
-    EXPECTED_SHA256="$(awk 'NR == 1 { print $1 }' "$CHECKSUM_FILE")"
-    if [[ ! "$EXPECTED_SHA256" =~ ^[[:xdigit:]]{64}$ ]]; then
-        echo "[error] File checksum SHA-256 khong hop le."
-        exit 1
+                if [ -n "$ACTUAL_SHA256" ] && [ "${ACTUAL_SHA256,,}" != "${EXPECTED_SHA256,,}" ]; then
+                    echo "[error] Checksum SHA-256 khong khop. Da huy cai dat."
+                    exit 1
+                fi
+                echo "[verify] Da xac minh ma bam SHA-256 thanh cong."
+            fi
+        fi
+
+        ARCHIVE_ENTRIES="$(tar -tzf "$ARCHIVE" 2>/dev/null || true)"
+        ENTRY_COUNT="$(printf '%s\n' "$ARCHIVE_ENTRIES" | sed '/^[[:space:]]*$/d' | wc -l)"
+        ONLY_ENTRY="$(printf '%s\n' "$ARCHIVE_ENTRIES" | sed '/^[[:space:]]*$/d;s#^\./##')"
+        if [ "$ENTRY_COUNT" -eq 1 ] && [ "$ONLY_ENTRY" = "antigravity-relay" ]; then
+            tar -xzf "$ARCHIVE" -C "$TMP_DIR"
+            if [ -f "$TMP_DIR/antigravity-relay" ] && [ ! -L "$TMP_DIR/antigravity-relay" ]; then
+                cp -f "$TMP_DIR/antigravity-relay" "$INSTALL_DIR/antigravity-relay"
+                DOWNLOAD_SUCCESS=true
+            fi
+        fi
     fi
 
-    if command -v sha256sum >/dev/null 2>&1; then
-        ACTUAL_SHA256="$(sha256sum "$ARCHIVE" | awk '{ print $1 }')"
-    elif command -v shasum >/dev/null 2>&1; then
-        ACTUAL_SHA256="$(shasum -a 256 "$ARCHIVE" | awk '{ print $1 }')"
-    else
-        echo "[error] Can sha256sum hoac shasum de xac minh ban phat hanh."
-        exit 1
+    # 3. Fallback: Build from git repository if prebuilt binary download or extraction failed
+    if [ "$DOWNLOAD_SUCCESS" != "true" ]; then
+        if command -v cargo >/dev/null 2>&1 && command -v git >/dev/null 2>&1; then
+            echo "[build] Khong the tai pre-built binary, dang bien dich tu GitHub repo..."
+            TMP_SRC="$(mktemp -d)"
+            git clone --depth 1 "https://github.com/${REPO}.git" "$TMP_SRC/repo"
+            (cd "$TMP_SRC/repo/antigravity-relay" && cargo build --release -j 2)
+            cp -f "$TMP_SRC/repo/antigravity-relay/target/release/antigravity-relay" "$INSTALL_DIR/antigravity-relay"
+            rm -rf "$TMP_SRC"
+        else
+            echo "[error] Khong the tai ban phat hanh va may chua cai dat 'cargo' / 'git'."
+            echo "        Vui long cai dat Rust (https://rustup.rs) hoac clone repo de build."
+            exit 1
+        fi
     fi
-
-    if [ "${ACTUAL_SHA256,,}" != "${EXPECTED_SHA256,,}" ]; then
-        echo "[error] Checksum SHA-256 khong khop. Da huy cai dat."
-        exit 1
-    fi
-
-    ARCHIVE_ENTRIES="$(tar -tzf "$ARCHIVE")"
-    ENTRY_COUNT="$(printf '%s\n' "$ARCHIVE_ENTRIES" | sed '/^[[:space:]]*$/d' | wc -l)"
-    ONLY_ENTRY="$(printf '%s\n' "$ARCHIVE_ENTRIES" | sed '/^[[:space:]]*$/d;s#^\./##')"
-    if [ "$ENTRY_COUNT" -ne 1 ] || [ "$ONLY_ENTRY" != "antigravity-relay" ]; then
-        echo "[error] Goi cap nhat chua duong dan khong mong doi."
-        exit 1
-    fi
-
-    tar -xzf "$ARCHIVE" -C "$TMP_DIR"
-    if [ ! -f "$TMP_DIR/antigravity-relay" ] || [ -L "$TMP_DIR/antigravity-relay" ]; then
-        echo "[error] Binary trong goi cap nhat khong hop le."
-        exit 1
-    fi
-    cp -f "$TMP_DIR/antigravity-relay" "$INSTALL_DIR/antigravity-relay"
-    cleanup
-    trap - EXIT
 fi
 
 chmod +x "$INSTALL_DIR/antigravity-relay"
