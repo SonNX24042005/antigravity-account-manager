@@ -528,6 +528,22 @@ async fn handle_passthrough_forwarding(
             .map(|a| a.to_string())
             .unwrap_or_else(|| "daily-cloudcode-pa.googleapis.com:443".to_string());
 
+        // H2 Fix: Whitelist allowed tunnel destinations to prevent Open Proxy / SSRF abuse
+        let is_allowed_host = host.ends_with(".googleapis.com:443")
+            || host.ends_with(".googleapis.com")
+            || host == "daily-cloudcode-pa.sandbox.googleapis.com:443"
+            || host == "daily-cloudcode-pa.googleapis.com:443"
+            || host == "cloudcode-pa.googleapis.com:443";
+
+        if !is_allowed_host {
+            tracing::warn!("[Tunnel] Blocked unauthorized CONNECT destination: {}", host);
+            return (
+                StatusCode::FORBIDDEN,
+                Json(json!({ "error": "Forbidden: Only Google APIs destinations are permitted for tunneling" })),
+            )
+                .into_response();
+        }
+
         tokio::spawn(async move {
             match hyper::upgrade::on(req).await {
                 Ok(upgraded) => {
@@ -544,6 +560,17 @@ async fn handle_passthrough_forwarding(
 
         return StatusCode::OK.into_response();
     }
+
+    // H3 Fix: Validate path to prevent path traversal and arbitrary SSRF injection
+    let raw_path = req.uri().path();
+    if !raw_path.starts_with("/v1") && !raw_path.starts_with("/v1internal") {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(json!({ "error": "Invalid passthrough path. Only /v1* and /v1internal* are permitted." })),
+        )
+            .into_response();
+    }
+
     let body_bytes = match axum::body::to_bytes(req.into_body(), 10 * 1024 * 1024).await {
         Ok(bytes) => bytes,
         Err(_) => return (StatusCode::BAD_REQUEST, "Failed to read body").into_response(),
