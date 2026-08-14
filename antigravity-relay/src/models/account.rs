@@ -68,4 +68,62 @@ impl Account {
     pub fn set_rate_limit(&mut self, duration_seconds: i64) {
         self.rate_limit_until = Some(Utc::now() + chrono::Duration::seconds(duration_seconds));
     }
+
+    pub fn get_gemini_5h_quota(&self) -> f64 {
+        self.get_quota_for_group("gemini")
+    }
+
+    pub fn get_claude_gpt_quota(&self) -> f64 {
+        for g in &self.quota_groups {
+            let lower = g.name.to_lowercase();
+            if lower.contains("claude") || lower.contains("gpt") {
+                return self.calculate_group_score(g);
+            }
+        }
+        // Fallback: check any non-Gemini group
+        for g in &self.quota_groups {
+            let lower = g.name.to_lowercase();
+            if !lower.contains("gemini") {
+                return self.calculate_group_score(g);
+            }
+        }
+        self.quota_percentage
+    }
+
+    pub fn get_quota_for_group(&self, group_keyword: &str) -> f64 {
+        let kw = group_keyword.to_lowercase();
+        for g in &self.quota_groups {
+            if g.name.to_lowercase().contains(&kw) {
+                return self.calculate_group_score(g);
+            }
+        }
+        self.quota_percentage
+    }
+
+    fn calculate_group_score(&self, g: &QuotaGroupInfo) -> f64 {
+        for b in &g.buckets {
+            let w = b.window.to_uppercase();
+            if w.contains("5H") || w.contains("FIVE") || w.contains("WINDOW") {
+                if let Some(ref reset_str) = b.reset_time {
+                    if let Ok(reset_dt) = chrono::DateTime::parse_from_rfc3339(reset_str) {
+                        if chrono::Utc::now() >= reset_dt.with_timezone(&chrono::Utc) {
+                            return 100.0;
+                        }
+                    }
+                }
+                return b.remaining_percentage;
+            }
+        }
+        if let Some(first) = g.buckets.first() {
+            if let Some(ref reset_str) = first.reset_time {
+                if let Ok(reset_dt) = chrono::DateTime::parse_from_rfc3339(reset_str) {
+                    if chrono::Utc::now() >= reset_dt.with_timezone(&chrono::Utc) {
+                        return 100.0;
+                    }
+                }
+            }
+            return first.remaining_percentage;
+        }
+        self.quota_percentage
+    }
 }

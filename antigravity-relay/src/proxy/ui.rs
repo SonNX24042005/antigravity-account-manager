@@ -30,7 +30,7 @@ pub fn get_admin_ui_html() -> &'static str {
           <span class="w-1.5 h-1.5 rounded-full bg-blue-500"></span>
           127.0.0.1:8045
         </div>
-        <button onclick="fetchAccounts()" title="Làm mới" class="p-1.5 hover:bg-zinc-800 rounded-md text-zinc-400 hover:text-zinc-200 transition">
+        <button onclick="fetchAccounts(); fetchPreference();" title="Làm mới" class="p-1.5 hover:bg-zinc-800 rounded-md text-zinc-400 hover:text-zinc-200 transition">
           <i data-lucide="refresh-cw" class="w-4 h-4 text-zinc-400"></i>
         </button>
       </div>
@@ -43,7 +43,7 @@ pub fn get_admin_ui_html() -> &'static str {
     <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
       <div>
         <h2 class="text-base font-semibold text-zinc-100">Danh sách tài khoản</h2>
-        <p class="text-xs text-zinc-400 mt-0.5">Tự động chọn tài khoản có nhiều hạn ngạch nhất khi chạy agy</p>
+        <p class="text-xs text-zinc-400 mt-0.5">Tự động chọn tài khoản có nhiều hạn ngạch nhất theo đúng mô hình đang dùng</p>
       </div>
 
       <!-- Add Account Dropdown Menu -->
@@ -94,21 +94,34 @@ pub fn get_admin_ui_html() -> &'static str {
       </div>
     </div>
 
-    <!-- Quick Stats -->
-    <div class="grid grid-cols-2 sm:grid-cols-3 gap-3 mb-6">
-      <div class="p-3.5 rounded-xl bg-zinc-900/50 border border-zinc-800/80">
+    <!-- Quick Stats & Intelligent Routing -->
+    <div class="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-6">
+      <div class="p-3.5 rounded-xl bg-zinc-900/50 border border-zinc-800/80 flex flex-col justify-between">
         <span class="text-xs text-zinc-400">Tổng số tài khoản</span>
         <div class="text-xl font-semibold text-zinc-100 mt-1" id="stat-total">0</div>
       </div>
-      <div class="p-3.5 rounded-xl bg-zinc-900/50 border border-zinc-800/80">
+
+      <div class="p-3.5 rounded-xl bg-zinc-900/50 border border-zinc-800/80 flex flex-col justify-between">
         <span class="text-xs text-zinc-400">Tài khoản đang dùng</span>
-        <div class="text-xl font-semibold text-blue-400 mt-1" id="stat-active">0</div>
+        <div class="text-xl font-semibold text-blue-400 mt-1 truncate" id="stat-active">Chưa có</div>
       </div>
-      <div class="p-3.5 rounded-xl bg-zinc-900/50 border border-zinc-800/80 col-span-2 sm:col-span-1">
-        <span class="text-xs text-zinc-400">Chế độ chọn tự động</span>
-        <div class="text-xs font-medium text-zinc-200 mt-2 flex items-center gap-1.5">
-          <span class="w-1.5 h-1.5 rounded-full bg-blue-500"></span>
-          Ưu tiên hạn ngạch 5h Gemini
+
+      <!-- Smart Model Routing Preference Card -->
+      <div class="p-3.5 rounded-xl bg-zinc-900/50 border border-zinc-800/80 flex flex-col justify-between">
+        <div class="flex items-center justify-between gap-2">
+          <span class="text-xs text-zinc-400">Chế độ tự động chọn</span>
+          <select id="pref-select" onchange="changePreference(this.value)" class="bg-zinc-950 border border-zinc-800 text-[11px] text-zinc-200 rounded-md px-2 py-0.5 focus:outline-none focus:border-blue-500">
+            <option value="auto">Tự động (Theo mô hình vừa dùng)</option>
+            <option value="gemini">Luôn ưu tiên Gemini</option>
+            <option value="claude_gpt">Luôn ưu tiên Claude & GPT</option>
+          </select>
+        </div>
+        <div class="mt-2 flex items-center justify-between">
+          <div class="flex items-center gap-1.5 text-xs font-medium text-zinc-200">
+            <span class="w-1.5 h-1.5 rounded-full bg-blue-500"></span>
+            <span id="detected-model-label">Đang phát hiện...</span>
+          </div>
+          <span id="detected-source-tag" class="text-[10px] text-zinc-500 truncate max-w-[150px]" title=""></span>
         </div>
       </div>
     </div>
@@ -187,6 +200,52 @@ pub fn get_admin_ui_html() -> &'static str {
       }
     });
 
+    async function fetchPreference() {
+      try {
+        const res = await fetch('/api/preference');
+        const data = await res.json();
+        const select = document.getElementById('pref-select');
+        if (select) {
+          select.value = data.preference;
+        }
+
+        const label = document.getElementById('detected-model-label');
+        if (label) {
+          if (data.preference === 'gemini') {
+            label.innerText = 'Ưu tiên Gemini';
+          } else if (data.preference === 'claude_gpt') {
+            label.innerText = 'Ưu tiên Claude & GPT';
+          } else {
+            label.innerText = data.detected_category === 'claude_gpt' ? 'Đang dùng: Claude & GPT' : 'Đang dùng: Gemini Models';
+          }
+        }
+
+        const tag = document.getElementById('detected-source-tag');
+        if (tag && data.last_detected_source) {
+          tag.innerText = data.last_detected_source;
+          tag.title = data.last_detected_source;
+        }
+      } catch (e) {
+        console.error('Failed to fetch preference:', e);
+      }
+    }
+
+    async function changePreference(prefVal) {
+      try {
+        const res = await fetch('/api/preference', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ preference: prefVal })
+        });
+        if (res.ok) {
+          fetchPreference();
+          fetchAccounts();
+        }
+      } catch (e) {
+        alert('Lỗi cập nhật cấu hình: ' + e);
+      }
+    }
+
     async function fetchAccounts() {
       try {
         const res = await fetch('/api/accounts');
@@ -199,8 +258,8 @@ pub fn get_admin_ui_html() -> &'static str {
 
     function renderAccounts(accounts) {
       document.getElementById('stat-total').innerText = accounts.length;
-      const activeCount = accounts.filter(a => a.is_active).length;
-      document.getElementById('stat-active').innerText = activeCount;
+      const activeAcc = accounts.find(a => a.is_active);
+      document.getElementById('stat-active').innerText = activeAcc ? activeAcc.email : 'Chưa chọn';
 
       const container = document.getElementById('accounts-grid');
       if (accounts.length === 0) {
@@ -450,7 +509,11 @@ pub fn get_admin_ui_html() -> &'static str {
     }
 
     fetchAccounts();
-    setInterval(fetchAccounts, 5000);
+    fetchPreference();
+    setInterval(() => {
+      fetchAccounts();
+      fetchPreference();
+    }, 5000);
   </script>
 </body>
 </html>
