@@ -51,6 +51,11 @@ Lệnh này sẽ tự động tải hoặc biên dịch và cài đặt lệnh �
   agyr stop
   ```
 
+- **Cập nhật lên phiên bản mới nhất:**
+  ```bash
+  agyr update
+  ```
+
 - **Khởi động lại dịch vụ:**
   ```bash
   agyr restart

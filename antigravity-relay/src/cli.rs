@@ -22,6 +22,11 @@ impl Cli {
             "enable" | "autostart" => Some(Self::enable_autostart()),
             "disable" => Some(Self::disable_autostart()),
             "install" => Some(Self::install_binary()),
+            "update" | "upgrade" => Some(Self::update_binary()),
+            "version" | "-v" | "--version" => {
+                println!("agyr v1.0.0 (Antigravity Relay Manager)");
+                Some(Ok(()))
+            }
             "help" | "--help" | "-h" => {
                 Self::print_help();
                 Some(Ok(()))
@@ -358,16 +363,44 @@ impl Cli {
         Ok(())
     }
 
+    fn update_binary() -> Result<()> {
+        println!("[agyr] Đang kiểm tra và tải bản cập nhật mới nhất từ GitHub...");
+
+        let was_running = Self::is_port_in_use(8045);
+
+        let status = Command::new("bash")
+            .args([
+                "-c",
+                "curl -fsSL https://raw.githubusercontent.com/SonNX24042005/antigravity-account-manager/main/install.sh | bash",
+            ])
+            .status()
+            .context("Không thể thực thi script cập nhật")?;
+
+        if status.success() {
+            println!("[agyr] Cập nhật phiên bản mới nhất thành công!");
+            if was_running {
+                println!("[agyr] Đang khởi động lại dịch vụ với phiên bản mới...");
+                let _ = Self::restart_service();
+            }
+        } else {
+            println!("[agyr] Có lỗi xảy ra trong quá trình cập nhật.");
+        }
+
+        Ok(())
+    }
+
     fn print_help() {
         println!("Antigravity Relay CLI Manager (agyr)");
         println!();
         println!("Cách sử dụng:");
         println!("  agyr              Tự động bật dịch vụ (nếu chưa chạy) và mở giao diện web");
+        println!("  agyr update       Cập nhật agyr lên phiên bản mới nhất từ GitHub");
         println!("  agyr start        Khởi chạy dịch vụ chạy ngầm");
         println!("  agyr autostart    Bật tự động chạy liên tục cùng hệ thống (kể cả restart máy)");
         println!("  agyr stop         Dừng dịch vụ đang chạy");
         println!("  agyr restart      Khởi động lại dịch vụ");
         println!("  agyr status       Xem trạng thái hoạt động của dịch vụ");
+        println!("  agyr version      Xem phiên bản hiện tại");
         println!("  agyr disable      Tắt chế độ tự khởi động cùng máy");
         println!("  agyr install      Cài đặt lệnh agyr vào ~/.local/bin");
         println!("  agyr run          Chạy trực tiếp trên terminal hiện tại (foreground)");
