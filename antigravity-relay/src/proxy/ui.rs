@@ -45,15 +45,52 @@ pub fn get_admin_ui_html() -> &'static str {
         <h2 class="text-base font-semibold text-zinc-100">Danh sách tài khoản</h2>
         <p class="text-xs text-zinc-400 mt-0.5">Tự động chọn tài khoản có nhiều hạn ngạch nhất khi chạy agy</p>
       </div>
-      <div class="flex items-center gap-2.5">
-        <button onclick="openDirectAddModal()" class="px-3 py-1.5 rounded-lg bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 text-xs font-medium text-zinc-300 transition flex items-center gap-1.5">
-          <i data-lucide="key" class="w-3.5 h-3.5 text-zinc-400"></i>
-          Thêm token
-        </button>
-        <button onclick="startOAuthLogin()" class="px-3.5 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-500 text-white text-xs font-semibold shadow-sm transition flex items-center gap-1.5">
+
+      <!-- Add Account Dropdown Menu -->
+      <div class="relative">
+        <button id="add-account-btn" onclick="toggleAddMenu()" class="px-3.5 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-500 text-white text-xs font-semibold shadow-sm transition flex items-center gap-1.5">
           <i data-lucide="plus" class="w-3.5 h-3.5"></i>
-          Đăng nhập Google
+          Thêm tài khoản
+          <i data-lucide="chevron-down" class="w-3.5 h-3.5 ml-0.5 text-blue-200"></i>
         </button>
+
+        <!-- Dropdown Menu -->
+        <div id="add-menu" class="absolute right-0 mt-2 w-72 bg-zinc-900 border border-zinc-800 rounded-xl shadow-2xl p-1.5 z-50 hidden">
+          <div class="px-2.5 py-1.5 text-[10px] font-medium text-zinc-500 uppercase tracking-wider">
+            Chọn phương thức thêm
+          </div>
+          
+          <!-- Option 1: Google OAuth -->
+          <button onclick="handleOptionOAuth()" class="w-full text-left p-2.5 rounded-lg hover:bg-zinc-800/80 transition flex items-start gap-3 group">
+            <div class="w-7 h-7 rounded-md bg-blue-500/10 border border-blue-500/20 text-blue-400 flex items-center justify-center flex-shrink-0 mt-0.5 group-hover:bg-blue-500 group-hover:text-white transition">
+              <i data-lucide="globe" class="w-4 h-4"></i>
+            </div>
+            <div>
+              <div class="text-xs font-semibold text-zinc-200 group-hover:text-white flex items-center gap-1.5">
+                Đăng nhập Google
+                <span class="text-[9px] px-1.5 py-0.5 rounded bg-blue-500/20 text-blue-400 font-normal">Khuyên dùng</span>
+              </div>
+              <div class="text-[10px] text-zinc-400 mt-0.5 leading-snug">
+                Tự động xác thực qua trình duyệt và tự động làm mới token
+              </div>
+            </div>
+          </button>
+
+          <!-- Option 2: Direct Token -->
+          <button onclick="handleOptionDirectToken()" class="w-full text-left p-2.5 rounded-lg hover:bg-zinc-800/80 transition flex items-start gap-3 group">
+            <div class="w-7 h-7 rounded-md bg-zinc-800 border border-zinc-700/60 text-zinc-400 flex items-center justify-center flex-shrink-0 mt-0.5 group-hover:bg-zinc-700 group-hover:text-zinc-200 transition">
+              <i data-lucide="key" class="w-4 h-4"></i>
+            </div>
+            <div>
+              <div class="text-xs font-semibold text-zinc-200 group-hover:text-white">
+                Nhập token thủ công
+              </div>
+              <div class="text-[10px] text-zinc-400 mt-0.5 leading-snug">
+                Dán access token hoặc refresh token trực tiếp
+              </div>
+            </div>
+          </button>
+        </div>
       </div>
     </div>
 
@@ -88,7 +125,10 @@ pub fn get_admin_ui_html() -> &'static str {
   <div id="add-modal" class="fixed inset-0 bg-zinc-950/80 backdrop-blur-sm z-50 flex items-center justify-center hidden p-4">
     <div class="bg-zinc-900 border border-zinc-800 rounded-xl p-5 w-full max-w-md shadow-2xl">
       <div class="flex items-center justify-between mb-4">
-        <h3 class="text-sm font-semibold text-zinc-100">Thêm token trực tiếp</h3>
+        <div>
+          <h3 class="text-sm font-semibold text-zinc-100">Nhập token thủ công</h3>
+          <p class="text-[11px] text-zinc-400 mt-0.5">Dán thông tin token của tài khoản Google</p>
+        </div>
         <button onclick="closeDirectAddModal()" class="text-zinc-400 hover:text-zinc-200">
           <i data-lucide="x" class="w-4 h-4"></i>
         </button>
@@ -107,15 +147,45 @@ pub fn get_admin_ui_html() -> &'static str {
           <input id="input-refresh-token" type="text" placeholder="1//04..." class="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2 text-xs focus:outline-none focus:border-blue-500 font-mono text-zinc-200">
         </div>
       </div>
-      <div class="flex items-center justify-end gap-2 mt-5">
-        <button onclick="closeDirectAddModal()" class="px-3 py-1.5 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-xs font-medium text-zinc-300">Đóng</button>
-        <button onclick="submitDirectAdd()" class="px-3.5 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-500 text-white text-xs font-semibold shadow-sm transition">Lưu tài khoản</button>
+      <div class="flex items-center justify-between mt-5 pt-3 border-t border-zinc-800">
+        <button onclick="closeDirectAddModal(); startOAuthLogin();" class="text-xs text-blue-400 hover:text-blue-300 transition">
+          Hoặc đăng nhập Google
+        </button>
+        <div class="flex items-center gap-2">
+          <button onclick="closeDirectAddModal()" class="px-3 py-1.5 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-xs font-medium text-zinc-300">Đóng</button>
+          <button onclick="submitDirectAdd()" class="px-3.5 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-500 text-white text-xs font-semibold shadow-sm transition">Lưu tài khoản</button>
+        </div>
       </div>
     </div>
   </div>
 
   <script>
     lucide.createIcons();
+
+    function toggleAddMenu() {
+      const menu = document.getElementById('add-menu');
+      menu.classList.toggle('hidden');
+      lucide.createIcons();
+    }
+
+    function handleOptionOAuth() {
+      document.getElementById('add-menu').classList.add('hidden');
+      startOAuthLogin();
+    }
+
+    function handleOptionDirectToken() {
+      document.getElementById('add-menu').classList.add('hidden');
+      openDirectAddModal();
+    }
+
+    // Close dropdown on outside click
+    document.addEventListener('click', (e) => {
+      const btn = document.getElementById('add-account-btn');
+      const menu = document.getElementById('add-menu');
+      if (btn && menu && !btn.contains(e.target) && !menu.contains(e.target)) {
+        menu.classList.add('hidden');
+      }
+    });
 
     async function fetchAccounts() {
       try {
@@ -138,7 +208,7 @@ pub fn get_admin_ui_html() -> &'static str {
           <div class="col-span-full py-16 text-center rounded-xl border border-dashed border-zinc-800 bg-zinc-900/20">
             <i data-lucide="user-x" class="w-8 h-8 text-zinc-600 mx-auto mb-2"></i>
             <p class="text-zinc-400 text-sm font-medium">Chưa có tài khoản nào</p>
-            <p class="text-xs text-zinc-500 mt-0.5">Bấm nút "Đăng nhập Google" ở trên để thêm tài khoản.</p>
+            <p class="text-xs text-zinc-500 mt-0.5">Bấm nút "Thêm tài khoản" ở trên để bắt đầu thêm tài khoản.</p>
           </div>
         `;
         lucide.createIcons();
