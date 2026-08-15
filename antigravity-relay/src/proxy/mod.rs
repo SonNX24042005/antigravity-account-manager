@@ -1,4 +1,3 @@
-pub mod mappers;
 pub mod model_detector;
 pub mod quota;
 pub mod server;

@@ -220,6 +220,7 @@ impl TokenManager {
         }
     }
 
+    #[allow(dead_code)]
     pub async fn mark_rate_limited(&self, email: &str, cooldown_seconds: i64) {
         let mut list = self.accounts.write().await;
         if let Some(account) = list.iter_mut().find(|a| a.email == email) {

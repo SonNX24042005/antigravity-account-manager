@@ -1,11 +1,7 @@
 use crate::config::Config;
 use crate::models::account::QuotaGroupInfo;
-use crate::models::{
-    Account, ChatCompletionRequest, ChatCompletionResponse, ChatCompletionResponseChoice,
-    ChatCompletionResponseUsage, ChatMessage,
-};
+use crate::models::Account;
 use crate::oauth::GoogleOAuth;
-use crate::proxy::mappers::Mappers;
 use crate::proxy::token_manager::TokenManager;
 use axum::{
     body::Body,
@@ -201,8 +197,6 @@ impl Server {
         let app = Router::new()
             .route("/", get(handle_admin_ui))
             .route("/admin", get(handle_admin_ui))
-            .route("/v1/chat/completions", post(handle_chat_completions))
-            .route("/v1/messages", post(handle_chat_completions))
             .route("/api/accounts", get(handle_list_accounts))
             .route("/api/health", get(handle_health))
             .route(
@@ -878,146 +872,6 @@ async fn read_limited_body(
     Ok(body)
 }
 
-async fn handle_chat_completions(
-    State(state): State<AppState>,
-    _headers: HeaderMap,
-    Json(req): Json<ChatCompletionRequest>,
-) -> impl IntoResponse {
-    let mut retries = 0;
-    let max_retries = 3;
-
-    while retries < max_retries {
-        retries += 1;
-
-        // 1. Select best account via P2C algorithm
-        let account = match state.token_manager.select_best_account().await {
-            Ok(acc) => acc,
-            Err(err) => {
-                return (
-                    StatusCode::SERVICE_UNAVAILABLE,
-                    Json(json!({ "error": format!("No available account: {}", err) })),
-                )
-                    .into_response();
-            }
-        };
-
-        tracing::info!(
-            "[Proxy] Attempt {}/{} -> Routing request to Gemini via account: {}",
-            retries,
-            max_retries,
-            account.email
-        );
-
-        // 2. Map request to CloudCode PA format
-        let cloudcode_payload = Mappers::openai_to_cloudcode(&req);
-        let upstream_url = "https://cloudcode-pa.googleapis.com/v1internal:generateContent";
-
-        // 3. Forward request to upstream with pool account OAuth Bearer token
-        let res = state
-            .http_client
-            .post(upstream_url)
-            .header("Host", "cloudcode-pa.googleapis.com")
-            .header("Authorization", format!("Bearer {}", account.access_token))
-            .header("User-Agent", "Antigravity/1.0.0")
-            .header("Content-Type", "application/json")
-            .json(&cloudcode_payload)
-            .send()
-            .await;
-
-        match res {
-            Ok(response) => {
-                let status = response.status();
-                if status.is_success() {
-                    let gemini_res = match read_limited_json(response, 10 * 1024 * 1024).await {
-                        Ok(value) => value,
-                        Err(error) => {
-                            tracing::warn!(
-                                "[Proxy] Invalid or oversized upstream response: {}",
-                                error
-                            );
-                            return (
-                                StatusCode::BAD_GATEWAY,
-                                Json(json!({ "error": "Invalid or oversized upstream response" })),
-                            )
-                                .into_response();
-                        }
-                    };
-                    let text = gemini_res["candidates"][0]["content"]["parts"][0]["text"]
-                        .as_str()
-                        .or_else(|| {
-                            gemini_res["response"]["candidates"][0]["content"]["parts"][0]["text"]
-                                .as_str()
-                        })
-                        .unwrap_or("No text generated")
-                        .to_string();
-
-                    let openai_res = ChatCompletionResponse {
-                        id: format!("chatcmpl-{}", uuid::Uuid::new_v4()),
-                        object: "chat.completion".to_string(),
-                        created: chrono::Utc::now().timestamp(),
-                        model: req.model.clone(),
-                        choices: vec![ChatCompletionResponseChoice {
-                            index: 0,
-                            message: ChatMessage {
-                                role: "assistant".to_string(),
-                                content: Some(json!(text)),
-                                name: None,
-                            },
-                            finish_reason: Some("stop".to_string()),
-                        }],
-                        usage: ChatCompletionResponseUsage {
-                            prompt_tokens: 100,
-                            completion_tokens: 200,
-                            total_tokens: 300,
-                        },
-                    };
-
-                    tracing::info!("[Proxy] Success 200 OK via account: {}", account.email);
-                    return (StatusCode::OK, Json(openai_res)).into_response();
-                } else if status == StatusCode::TOO_MANY_REQUESTS
-                    || status == StatusCode::FORBIDDEN
-                    || status == StatusCode::UNAUTHORIZED
-                {
-                    tracing::warn!(
-                        "[Auto-Failover] Account {} returned {} (Rate Limited/Quota Exceeded)! Circuit breaker activated.",
-                        account.email, status
-                    );
-                    // Mark rate limited in TokenManager (cooldown 300s = 5m)
-                    state
-                        .token_manager
-                        .mark_rate_limited(&account.email, 300)
-                        .await;
-                    // Loop continues to retry seamlessly on next healthy account in pool!
-                    continue;
-                } else {
-                    let err_text = read_limited_body(response, 64 * 1024)
-                        .await
-                        .map(|body| String::from_utf8_lossy(&body).into_owned())
-                        .unwrap_or_else(|_| "Upstream error body was too large".to_string());
-                    return (
-                        status,
-                        Json(json!({ "error": format!("Upstream error: {}", err_text) })),
-                    )
-                        .into_response();
-                }
-            }
-            Err(err) => {
-                tracing::error!("[Proxy] Request error: {}", err);
-                state
-                    .token_manager
-                    .mark_rate_limited(&account.email, 60)
-                    .await;
-                continue;
-            }
-        }
-    }
-
-    (
-        StatusCode::SERVICE_UNAVAILABLE,
-        Json(json!({ "error": "All accounts in pool hit rate limit or failed" })),
-    )
-        .into_response()
-}
 
 async fn handle_passthrough_forwarding(
     State(state): State<AppState>,
@@ -1245,7 +1099,7 @@ mod tests {
         ));
         assert!(!browser_session_can_authorize(
             &axum::http::Method::POST,
-            "/v1/chat/completions"
+            "/v1internal:generateContent"
         ));
         assert!(!browser_session_can_authorize(
             &axum::http::Method::CONNECT,

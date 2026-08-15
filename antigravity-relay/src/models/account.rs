@@ -65,6 +65,7 @@ impl Account {
         }
     }
 
+    #[allow(dead_code)]
     pub fn set_rate_limit(&mut self, duration_seconds: i64) {
         self.rate_limit_until = Some(Utc::now() + chrono::Duration::seconds(duration_seconds));
     }
