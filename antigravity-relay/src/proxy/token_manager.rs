@@ -250,21 +250,27 @@ impl TokenManager {
             // 1. Auto-refresh OAuth token if expired
             let mut token_refreshed = false;
             if account.is_token_expired() && !account.refresh_token.is_empty() {
-                if let Ok(token_resp) =
-                    crate::oauth::GoogleOAuth::refresh_access_token(client, &account.refresh_token)
-                        .await
-                {
-                    account.access_token = token_resp.access_token;
-                    if let Some(new_refresh) = token_resp.refresh_token {
-                        account.refresh_token = new_refresh;
+                match crate::oauth::GoogleOAuth::refresh_access_token(client, &account.refresh_token).await {
+                    Ok(token_resp) => {
+                        account.access_token = token_resp.access_token;
+                        if let Some(new_refresh) = token_resp.refresh_token {
+                            account.refresh_token = new_refresh;
+                        }
+                        let expires_in = token_resp.expires_in.unwrap_or(3600);
+                        account.expires_at = chrono::Utc::now() + chrono::Duration::seconds(expires_in);
+                        token_refreshed = true;
+                        tracing::info!(
+                            "[TokenManager] Successfully refreshed token for {}",
+                            account.email
+                        );
                     }
-                    let expires_in = token_resp.expires_in.unwrap_or(3600);
-                    account.expires_at = chrono::Utc::now() + chrono::Duration::seconds(expires_in);
-                    token_refreshed = true;
-                    tracing::info!(
-                        "[TokenManager] Successfully refreshed token for {}",
-                        account.email
-                    );
+                    Err(error) => {
+                        tracing::warn!(
+                            "[TokenManager] Failed to refresh token for {}: {}",
+                            account.email,
+                            error
+                        );
+                    }
                 }
             }
 
@@ -275,11 +281,39 @@ impl TokenManager {
                     &account.access_token,
                 )
                 .await;
-            if let Some(pct) = overall_pct {
-                account.quota_percentage = pct;
-            }
-            if !groups.is_empty() {
-                account.quota_groups = groups.clone();
+
+            // If quota fetch failed and token was not already refreshed, attempt a fallback token refresh
+            if overall_pct.is_none() && groups.is_empty() && !token_refreshed && !account.refresh_token.is_empty() {
+                if let Ok(token_resp) = crate::oauth::GoogleOAuth::refresh_access_token(client, &account.refresh_token).await {
+                    account.access_token = token_resp.access_token;
+                    if let Some(new_refresh) = token_resp.refresh_token {
+                        account.refresh_token = new_refresh;
+                    }
+                    let expires_in = token_resp.expires_in.unwrap_or(3600);
+                    account.expires_at = chrono::Utc::now() + chrono::Duration::seconds(expires_in);
+                    token_refreshed = true;
+                    tracing::info!(
+                        "[TokenManager] Fallback token refresh succeeded for {}",
+                        account.email
+                    );
+                    let (retry_pct, retry_groups) = crate::proxy::quota::QuotaFetcher::fetch_account_quota_full(
+                        client,
+                        &account.access_token,
+                    ).await;
+                    if let Some(pct) = retry_pct {
+                        account.quota_percentage = pct;
+                    }
+                    if !retry_groups.is_empty() {
+                        account.quota_groups = retry_groups;
+                    }
+                }
+            } else {
+                if let Some(pct) = overall_pct {
+                    account.quota_percentage = pct;
+                }
+                if !groups.is_empty() {
+                    account.quota_groups = groups.clone();
+                }
             }
 
             // Record quota delta for intelligent usage detection

@@ -87,7 +87,7 @@ impl Cli {
         #[cfg(target_os = "windows")]
         {
             let _ = Command::new("cmd")
-                .args(["/c", "start", &url])
+                .args(["/c", "start", "", &url])
                 .stdin(Stdio::null())
                 .stdout(Stdio::null())
                 .stderr(Stdio::null())
@@ -98,21 +98,39 @@ impl Cli {
     }
 
     fn get_installed_bin_path() -> PathBuf {
-        dirs::home_dir()
-            .unwrap_or_else(|| PathBuf::from("."))
-            .join(".local")
-            .join("bin")
-            .join("antigravity-relay")
+        #[cfg(target_os = "windows")]
+        {
+            dirs::data_local_dir()
+                .unwrap_or_else(|| PathBuf::from("."))
+                .join("antigravity-relay")
+                .join("bin")
+                .join("antigravity-relay.exe")
+        }
+        #[cfg(not(target_os = "windows"))]
+        {
+            dirs::home_dir()
+                .unwrap_or_else(|| PathBuf::from("."))
+                .join(".local")
+                .join("bin")
+                .join("antigravity-relay")
+        }
     }
 
     fn get_service_file_path() -> Option<PathBuf> {
-        let home = dirs::home_dir()?;
-        Some(
-            home.join(".config")
-                .join("systemd")
-                .join("user")
-                .join("antigravity-relay.service"),
-        )
+        #[cfg(target_os = "linux")]
+        {
+            let home = dirs::home_dir()?;
+            Some(
+                home.join(".config")
+                    .join("systemd")
+                    .join("user")
+                    .join("antigravity-relay.service"),
+            )
+        }
+        #[cfg(not(target_os = "linux"))]
+        {
+            None
+        }
     }
 
     fn is_port_in_use(port: u16) -> bool {
@@ -187,29 +205,43 @@ impl Cli {
     }
 
     fn is_systemd_service_active() -> bool {
-        let output = Command::new("systemctl")
-            .args(["--user", "is-active", "antigravity-relay.service"])
-            .stdin(Stdio::null())
-            .stderr(Stdio::null())
-            .output();
-        if let Ok(out) = output {
-            let status = String::from_utf8_lossy(&out.stdout).trim().to_string();
-            status == "active"
-        } else {
+        #[cfg(target_os = "linux")]
+        {
+            let output = Command::new("systemctl")
+                .args(["--user", "is-active", "antigravity-relay.service"])
+                .stdin(Stdio::null())
+                .stderr(Stdio::null())
+                .output();
+            if let Ok(out) = output {
+                let status = String::from_utf8_lossy(&out.stdout).trim().to_string();
+                status == "active"
+            } else {
+                false
+            }
+        }
+        #[cfg(not(target_os = "linux"))]
+        {
             false
         }
     }
 
     fn is_systemd_service_enabled() -> bool {
-        let output = Command::new("systemctl")
-            .args(["--user", "is-enabled", "antigravity-relay.service"])
-            .stdin(Stdio::null())
-            .stderr(Stdio::null())
-            .output();
-        if let Ok(out) = output {
-            let status = String::from_utf8_lossy(&out.stdout).trim().to_string();
-            status == "enabled"
-        } else {
+        #[cfg(target_os = "linux")]
+        {
+            let output = Command::new("systemctl")
+                .args(["--user", "is-enabled", "antigravity-relay.service"])
+                .stdin(Stdio::null())
+                .stderr(Stdio::null())
+                .output();
+            if let Ok(out) = output {
+                let status = String::from_utf8_lossy(&out.stdout).trim().to_string();
+                status == "enabled"
+            } else {
+                false
+            }
+        }
+        #[cfg(not(target_os = "linux"))]
+        {
             false
         }
     }
@@ -226,14 +258,29 @@ impl Cli {
             return Ok(());
         }
 
-        if Self::is_systemd_service_enabled() {
-            println!("[agyr] Đang khởi chạy dịch vụ qua systemd...");
-            let _ = Command::new("systemctl")
-                .args(["--user", "start", "antigravity-relay.service"])
-                .stdin(Stdio::null())
-                .stdout(Stdio::null())
-                .stderr(Stdio::null())
-                .status();
+        let started_via_systemd = {
+            #[cfg(target_os = "linux")]
+            {
+                if Self::is_systemd_service_enabled() {
+                    println!("[agyr] Đang khởi chạy dịch vụ qua systemd...");
+                    let _ = Command::new("systemctl")
+                        .args(["--user", "start", "antigravity-relay.service"])
+                        .stdin(Stdio::null())
+                        .stdout(Stdio::null())
+                        .stderr(Stdio::null())
+                        .status();
+                    true
+                } else {
+                    false
+                }
+            }
+            #[cfg(not(target_os = "linux"))]
+            {
+                false
+            }
+        };
+
+        if !started_via_systemd {
             let exe = std::env::current_exe()?;
             println!("[agyr] Đang khởi chạy tiến trình nền...");
             let mut cmd = Command::new(exe);
@@ -273,22 +320,37 @@ impl Cli {
         let port = crate::config::Config::default().port;
         let was_relay_running = Self::is_relay_service_running(port);
 
-        // Stop systemd unit if active
-        let _ = Command::new("systemctl")
-            .args(["--user", "stop", "antigravity-relay.service"])
-            .stdin(Stdio::null())
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .status();
-
-        // Stop only a previously authenticated relay process left outside systemd.
-        if was_relay_running && Self::is_relay_service_running(port) {
-            let _ = Command::new("fuser")
-                .args(["-k", &format!("{port}/tcp")])
+        // Stop systemd unit if on Linux
+        #[cfg(target_os = "linux")]
+        {
+            let _ = Command::new("systemctl")
+                .args(["--user", "stop", "antigravity-relay.service"])
                 .stdin(Stdio::null())
                 .stdout(Stdio::null())
                 .stderr(Stdio::null())
                 .status();
+        }
+
+        // Stop only a previously authenticated relay process left outside systemd.
+        if was_relay_running && Self::is_relay_service_running(port) {
+            #[cfg(unix)]
+            {
+                let _ = Command::new("fuser")
+                    .args(["-k", &format!("{port}/tcp")])
+                    .stdin(Stdio::null())
+                    .stdout(Stdio::null())
+                    .stderr(Stdio::null())
+                    .status();
+            }
+            #[cfg(target_os = "windows")]
+            {
+                let _ = Command::new("taskkill")
+                    .args(["/F", "/IM", "antigravity-relay.exe"])
+                    .stdin(Stdio::null())
+                    .stdout(Stdio::null())
+                    .stderr(Stdio::null())
+                    .status();
+            }
         }
 
         std::thread::sleep(std::time::Duration::from_millis(300));
@@ -351,80 +413,79 @@ impl Cli {
     }
 
     fn enable_autostart() -> Result<()> {
-        let service_path = match Self::get_service_file_path() {
-            Some(p) => p,
-            None => return Err(anyhow::anyhow!("Không tìm thấy thư mục home")),
-        };
-
-        if let Some(parent) = service_path.parent() {
-            fs::create_dir_all(parent)?;
+        #[cfg(not(target_os = "linux"))]
+        {
+            anyhow::bail!("Tính năng tự khởi động qua systemd hiện chỉ hỗ trợ trên Linux.");
         }
+        #[cfg(target_os = "linux")]
+        {
+            let service_path = match Self::get_service_file_path() {
+                Some(p) => p,
+                None => return Err(anyhow::anyhow!("Không tìm thấy thư mục home")),
+            };
 
-        // Ensure binary is installed in ~/.local/bin/antigravity-relay
-        let bin_path = Self::get_installed_bin_path();
-        if !bin_path.exists() {
-            let current_exe = std::env::current_exe()?;
-            if let Some(bin_parent) = bin_path.parent() {
-                fs::create_dir_all(bin_parent)?;
+            if let Some(parent) = service_path.parent() {
+                fs::create_dir_all(parent)?;
             }
-            fs::copy(&current_exe, &bin_path)?;
-            let _ = Command::new("chmod")
-                .args(["+x", bin_path.to_str().unwrap_or_default()])
+
+            // Ensure binary is installed in ~/.local/bin/antigravity-relay
+            let bin_path = Self::get_installed_bin_path();
+            if !bin_path.exists() {
+                let current_exe = std::env::current_exe()?;
+                let binary = fs::read(&current_exe)?;
+                crate::storage::secure_file::atomic_write(&bin_path, &binary, 0o755)?;
+            }
+
+            let bin_arg = Self::quote_systemd_exec_path(&bin_path)?;
+
+            let service_content = format!(
+                "[Unit]\n\
+                Description=Antigravity Relay Account Manager Daemon\n\
+                After=network.target\n\n\
+                [Service]\n\
+                Type=simple\n\
+                ExecStart={} run\n\
+                Restart=always\n\
+                RestartSec=3\n\
+                Environment=RUST_LOG=info\n\n\
+                [Install]\n\
+                WantedBy=default.target\n",
+                bin_arg
+            );
+
+            crate::storage::secure_file::atomic_write(
+                &service_path,
+                service_content.as_bytes(),
+                0o600,
+            )?;
+            println!("[agyr] Đã tạo service file tại {:?}", service_path);
+
+            // Reload systemd & enable
+            let _ = Command::new("systemctl")
+                .args(["--user", "daemon-reload"])
                 .stdin(Stdio::null())
                 .stdout(Stdio::null())
                 .stderr(Stdio::null())
                 .status();
+
+            let status = Command::new("systemctl")
+                .args(["--user", "enable", "--now", "antigravity-relay.service"])
+                .stdin(Stdio::null())
+                .stdout(Stdio::null())
+                .stderr(Stdio::null())
+                .status()?;
+
+            if status.success() {
+                println!("[agyr] Đã kích hoạt chế độ tự động chạy cùng hệ thống (Auto-start on boot).");
+                println!("       - Tự động chạy nền liên tục kể cả khi khởi động lại máy tính.");
+                println!("       - Tự động hồi phục và bật lại sau 3 giây nếu bị dừng.");
+                println!("       - Dùng lệnh 'agyr stop' hoặc 'agyr disable' khi muốn dừng.");
+            } else {
+                println!("[agyr] Có lỗi khi kích hoạt systemd service.");
+            }
+
+            Ok(())
         }
-
-        let bin_arg = Self::quote_systemd_exec_path(&bin_path)?;
-
-        let service_content = format!(
-            "[Unit]\n\
-            Description=Antigravity Relay Account Manager Daemon\n\
-            After=network.target\n\n\
-            [Service]\n\
-            Type=simple\n\
-            ExecStart={} run\n\
-            Restart=always\n\
-            RestartSec=3\n\
-            Environment=RUST_LOG=info\n\n\
-            [Install]\n\
-            WantedBy=default.target\n",
-            bin_arg
-        );
-
-        crate::storage::secure_file::atomic_write(
-            &service_path,
-            service_content.as_bytes(),
-            0o600,
-        )?;
-        println!("[agyr] Đã tạo service file tại {:?}", service_path);
-
-        // Reload systemd & enable
-        let _ = Command::new("systemctl")
-            .args(["--user", "daemon-reload"])
-            .stdin(Stdio::null())
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .status();
-
-        let status = Command::new("systemctl")
-            .args(["--user", "enable", "--now", "antigravity-relay.service"])
-            .stdin(Stdio::null())
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .status()?;
-
-        if status.success() {
-            println!("[agyr] Đã kích hoạt chế độ tự động chạy cùng hệ thống (Auto-start on boot).");
-            println!("       - Tự động chạy nền liên tục kể cả khi khởi động lại máy tính.");
-            println!("       - Tự động hồi phục và bật lại sau 3 giây nếu bị dừng.");
-            println!("       - Dùng lệnh 'agyr stop' hoặc 'agyr disable' khi muốn dừng.");
-        } else {
-            println!("[agyr] Có lỗi khi kích hoạt systemd service.");
-        }
-
-        Ok(())
     }
 
     fn quote_systemd_exec_path(path: &PathBuf) -> Result<String> {
@@ -444,29 +505,36 @@ impl Cli {
     }
 
     fn disable_autostart() -> Result<()> {
-        println!("[agyr] Đang tắt chế độ tự động chạy cùng hệ thống...");
-        let _ = Command::new("systemctl")
-            .args(["--user", "disable", "--now", "antigravity-relay.service"])
-            .stdin(Stdio::null())
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .status();
-
-        if let Some(service_path) = Self::get_service_file_path() {
-            if service_path.exists() {
-                let _ = fs::remove_file(service_path);
-            }
+        #[cfg(not(target_os = "linux"))]
+        {
+            anyhow::bail!("Tính năng tự khởi động qua systemd hiện chỉ hỗ trợ trên Linux.");
         }
+        #[cfg(target_os = "linux")]
+        {
+            println!("[agyr] Đang tắt chế độ tự động chạy cùng hệ thống...");
+            let _ = Command::new("systemctl")
+                .args(["--user", "disable", "--now", "antigravity-relay.service"])
+                .stdin(Stdio::null())
+                .stdout(Stdio::null())
+                .stderr(Stdio::null())
+                .status();
 
-        let _ = Command::new("systemctl")
-            .args(["--user", "daemon-reload"])
-            .stdin(Stdio::null())
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .status();
+            if let Some(service_path) = Self::get_service_file_path() {
+                if service_path.exists() {
+                    let _ = fs::remove_file(service_path);
+                }
+            }
 
-        println!("[agyr] Đã tắt chế độ tự khởi động cùng hệ thống.");
-        Ok(())
+            let _ = Command::new("systemctl")
+                .args(["--user", "daemon-reload"])
+                .stdin(Stdio::null())
+                .stdout(Stdio::null())
+                .stderr(Stdio::null())
+                .status();
+
+            println!("[agyr] Đã tắt chế độ tự khởi động cùng hệ thống.");
+            Ok(())
+        }
     }
 
     fn install_binary() -> Result<()> {
@@ -478,24 +546,17 @@ impl Cli {
         }
 
         if current_exe != target_bin {
-            fs::copy(&current_exe, &target_bin)?;
-            let _ = Command::new("chmod")
-                .args(["+x", target_bin.to_str().unwrap_or_default()])
-                .stdin(Stdio::null())
-                .stdout(Stdio::null())
-                .stderr(Stdio::null())
-                .status();
+            let binary = fs::read(&current_exe)?;
+            crate::storage::secure_file::atomic_write(&target_bin, &binary, 0o755)?;
         }
 
-        // Create short symlink 'agyr'
+        // Create short symlink 'agyr' on Unix
+        #[cfg(unix)]
         if let Some(parent) = target_bin.parent() {
             let symlink_path = parent.join("agyr");
             let _ = fs::remove_file(&symlink_path);
-            #[cfg(unix)]
-            {
-                use std::os::unix::fs::symlink;
-                let _ = symlink(&target_bin, &symlink_path);
-            }
+            use std::os::unix::fs::symlink;
+            let _ = symlink(&target_bin, &symlink_path);
         }
 
         println!(
@@ -523,6 +584,7 @@ impl Cli {
     }
 
     fn download_verified_release() -> Result<()> {
+        let is_windows = cfg!(target_os = "windows");
         let os = match std::env::consts::OS {
             "macos" => "darwin",
             value => value,
@@ -532,7 +594,11 @@ impl Cli {
             "aarch64" => "aarch64",
             value => value,
         };
-        let asset_name = format!("antigravity-relay-{}-{}.tar.gz", os, arch);
+        let asset_name = if is_windows {
+            format!("antigravity-relay-{}-{}.zip", os, arch)
+        } else {
+            format!("antigravity-relay-{}-{}.tar.gz", os, arch)
+        };
         let asset_url = format!(
             "https://github.com/SonNX24042005/antigravity-account-manager/releases/latest/download/{}",
             asset_name
@@ -556,38 +622,69 @@ impl Cli {
                 "Checksum SHA-256 của bản cập nhật không khớp"
             );
 
-            let list_output = Command::new("tar")
-                .args(["-tzf"])
-                .arg(&archive)
-                .output()
-                .context("Không thể kiểm tra nội dung gói cập nhật")?;
-            anyhow::ensure!(
-                list_output.status.success(),
-                "Gói cập nhật không phải tar.gz hợp lệ"
-            );
-            let listing = String::from_utf8_lossy(&list_output.stdout);
-            let entries: Vec<&str> = listing
-                .lines()
-                .filter(|line| !line.trim().is_empty())
-                .collect();
-            anyhow::ensure!(
-                entries.len() == 1
-                    && matches!(entries[0], "antigravity-relay" | "./antigravity-relay"),
-                "Gói cập nhật chứa đường dẫn không mong đợi"
-            );
+            let extracted_bin_name = if is_windows {
+                "antigravity-relay.exe"
+            } else {
+                "antigravity-relay"
+            };
 
-            let status = Command::new("tar")
-                .args(["-xzf"])
-                .arg(&archive)
-                .arg("-C")
-                .arg(&temp_dir)
-                .status()
-                .context("Không thể giải nén bản cập nhật")?;
-            anyhow::ensure!(status.success(), "Không thể giải nén bản cập nhật");
+            if is_windows {
+                let status = Command::new("tar")
+                    .args(["-xf"])
+                    .arg(&archive)
+                    .arg("-C")
+                    .arg(&temp_dir)
+                    .status();
+                let success = match status {
+                    Ok(s) => s.success(),
+                    Err(_) => {
+                        let ps_cmd = format!(
+                            "Expand-Archive -Path '{}' -DestinationPath '{}' -Force",
+                            archive.display(),
+                            temp_dir.display()
+                        );
+                        Command::new("powershell")
+                            .args(["-NoProfile", "-Command", &ps_cmd])
+                            .status()
+                            .map(|s| s.success())
+                            .unwrap_or(false)
+                    }
+                };
+                anyhow::ensure!(success, "Không thể giải nén bản cập nhật zip");
+            } else {
+                let list_output = Command::new("tar")
+                    .args(["-tzf"])
+                    .arg(&archive)
+                    .output()
+                    .context("Không thể kiểm tra nội dung gói cập nhật")?;
+                anyhow::ensure!(
+                    list_output.status.success(),
+                    "Gói cập nhật không phải tar.gz hợp lệ"
+                );
+                let listing = String::from_utf8_lossy(&list_output.stdout);
+                let entries: Vec<&str> = listing
+                    .lines()
+                    .filter(|line| !line.trim().is_empty())
+                    .collect();
+                anyhow::ensure!(
+                    entries.len() == 1
+                        && matches!(entries[0], "antigravity-relay" | "./antigravity-relay"),
+                    "Gói cập nhật chứa đường dẫn không mong đợi"
+                );
 
-            let extracted = temp_dir.join("antigravity-relay");
+                let status = Command::new("tar")
+                    .args(["-xzf"])
+                    .arg(&archive)
+                    .arg("-C")
+                    .arg(&temp_dir)
+                    .status()
+                    .context("Không thể giải nén bản cập nhật")?;
+                anyhow::ensure!(status.success(), "Không thể giải nén bản cập nhật");
+            }
+
+            let extracted = temp_dir.join(extracted_bin_name);
             let metadata = fs::symlink_metadata(&extracted)
-                .context("Gói cập nhật thiếu file antigravity-relay")?;
+                .with_context(|| format!("Gói cập nhật thiếu file {}", extracted_bin_name))?;
             anyhow::ensure!(
                 metadata.file_type().is_file(),
                 "Binary cập nhật không phải file thường"
@@ -620,9 +717,34 @@ impl Cli {
             .arg(url)
             .arg("-o")
             .arg(destination)
-            .status()
-            .with_context(|| format!("Không thể tải {}", url))?;
-        anyhow::ensure!(status.success(), "Tải bản cập nhật thất bại");
+            .status();
+
+        let ok = match status {
+            Ok(s) => s.success(),
+            Err(_) => false,
+        };
+
+        if !ok {
+            #[cfg(target_os = "windows")]
+            {
+                let ps_cmd = format!(
+                    "Invoke-WebRequest -Uri '{}' -OutFile '{}'",
+                    url,
+                    destination.display()
+                );
+                let fallback = Command::new("powershell")
+                    .args(["-NoProfile", "-Command", &ps_cmd])
+                    .status()
+                    .map(|s| s.success())
+                    .unwrap_or(false);
+                anyhow::ensure!(fallback, "Không thể tải {}", url);
+                return Ok(());
+            }
+            #[cfg(not(target_os = "windows"))]
+            {
+                anyhow::bail!("Tải bản cập nhật thất bại: {}", url);
+            }
+        }
         Ok(())
     }
 
