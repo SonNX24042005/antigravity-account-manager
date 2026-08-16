@@ -6,6 +6,9 @@ use std::path::Path;
 /// Write a file through a same-directory temporary file and atomically replace it on Unix.
 /// The temporary file is created with the requested mode, so secrets are never briefly public.
 pub fn atomic_write(path: &Path, contents: &[u8], unix_mode: u32) -> Result<()> {
+    #[cfg(not(unix))]
+    let _ = unix_mode;
+
     let parent = path
         .parent()
         .ok_or_else(|| anyhow::anyhow!("Path has no parent: {}", path.display()))?;

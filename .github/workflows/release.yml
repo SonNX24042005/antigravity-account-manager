@@ -14,6 +14,7 @@ jobs:
     name: Build - ${{ matrix.target }}
     runs-on: ${{ matrix.os }}
     strategy:
+      fail-fast: false
       matrix:
         include:
           - os: ubuntu-latest
@@ -33,6 +34,11 @@ jobs:
             target: aarch64-apple-darwin
             artifact_name: antigravity-relay
             asset_name: antigravity-relay-darwin-aarch64.tar.gz
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+            artifact_name: antigravity-relay.exe
+            asset_name: antigravity-relay-windows-x86_64.zip
+            is_windows: true
 
     steps:
       - name: Checkout repository
@@ -48,6 +54,7 @@ jobs:
         run: cargo install cross --git https://github.com/cross-rs/cross
 
       - name: Build binary
+        shell: bash
         run: |
           cd antigravity-relay
           if [ "${{ matrix.use_cross }}" = "true" ]; then
@@ -57,10 +64,15 @@ jobs:
           fi
 
       - name: Package artifact
+        shell: bash
         run: |
           mkdir -p package
-          cp antigravity-relay/target/${{ matrix.target }}/release/${{ matrix.artifact_name }} package/
-          tar -czvf ${{ matrix.asset_name }} -C package ${{ matrix.artifact_name }}
+          cp "antigravity-relay/target/${{ matrix.target }}/release/${{ matrix.artifact_name }}" package/
+          if [ "${{ matrix.is_windows }}" = "true" ]; then
+            7z a "${{ matrix.asset_name }}" ./package/${{ matrix.artifact_name }}
+          else
+            tar -czvf "${{ matrix.asset_name }}" -C package "${{ matrix.artifact_name }}"
+          fi
           if command -v sha256sum >/dev/null 2>&1; then
             sha256sum "${{ matrix.asset_name }}" > "${{ matrix.asset_name }}.sha256"
           else

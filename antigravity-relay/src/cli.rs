@@ -87,7 +87,7 @@ impl Cli {
         #[cfg(target_os = "windows")]
         {
             let _ = Command::new("cmd")
-                .args(["/c", "start", url])
+                .args(["/c", "start", &url])
                 .stdin(Stdio::null())
                 .stdout(Stdio::null())
                 .stderr(Stdio::null())
