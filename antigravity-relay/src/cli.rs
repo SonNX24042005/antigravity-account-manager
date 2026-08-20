@@ -27,7 +27,7 @@ impl Cli {
             "install" => Some(Self::install_binary()),
             "update" | "upgrade" => Some(Self::update_binary()),
             "version" | "-v" | "--version" => {
-                println!("agyr v1.0.2 (Antigravity Relay Manager)");
+                println!("agyr v1.0.3 (Antigravity Relay Manager)");
                 Some(Ok(()))
             }
             "help" | "--help" | "-h" => {
