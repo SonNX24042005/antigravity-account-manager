@@ -395,14 +395,21 @@ pub fn get_admin_ui_html() -> &'static str {
                         if (resetInfo.isExpired) {
                           pct = 100;
                         }
+                        const winUpper = String(b.window || '').toUpperCase();
+                        const isWeekly = winUpper.includes('WEEK') || winUpper.includes('7D') || winUpper.includes('SEVEN');
+                        const is5h = winUpper.includes('5H') || winUpper.includes('FIVE');
+                        const winTitle = is5h ? 'Hạn ngạch 5 giờ' : (isWeekly ? 'Hạn ngạch tuần' : escapeHtml(b.window));
+                        const isExhausted = pct === 0;
                         const isLow = pct < 20;
                         return `
                         <div>
                           <div class="flex justify-between text-[10px] text-zinc-400 mb-0.5">
-                            <span>${b.window === 'FIVE_HOUR' ? 'Hạn ngạch 5 giờ' : (b.window === 'WEEKLY' ? 'Hạn ngạch tuần' : escapeHtml(b.window))}</span>
-                            <span class="font-mono ${isLow ? 'text-amber-400' : 'text-blue-400'} font-medium">${pct}%</span>
+                            <span class="${isWeekly && isExhausted ? 'text-red-400 font-medium' : ''}">
+                              ${winTitle}${isWeekly && isExhausted ? ' (Hết hạn ngạch tuần)' : ''}
+                            </span>
+                            <span class="font-mono ${isExhausted ? 'text-red-400' : (isLow ? 'text-amber-400' : 'text-blue-400')} font-medium">${pct}%</span>
                           </div>
-                          <progress class="quota-progress ${isLow ? 'low' : ''}" max="100" value="${pct}">${pct}%</progress>
+                          <progress class="quota-progress ${isExhausted ? 'exhausted' : (isLow ? 'low' : '')}" max="100" value="${pct}">${pct}%</progress>
                           ${resetInfo.text ? `
                             <div class="text-[9px] text-zinc-500 mt-0.5 font-mono">
                               ${escapeHtml(resetInfo.text)}
@@ -481,8 +488,12 @@ pub fn get_admin_ui_html() -> &'static str {
     }
 
     function getResetDisplay(resetTimeStr, window) {
+      const winUpper = String(window || '').toUpperCase();
+      const is5h = winUpper.includes('5H') || winUpper.includes('FIVE');
+      const isWeekly = winUpper.includes('WEEK') || winUpper.includes('7D') || winUpper.includes('SEVEN');
+
       if (!resetTimeStr) {
-        return { text: window === 'FIVE_HOUR' ? 'Chu kỳ: 5 giờ (đầy đủ)' : '', isExpired: false };
+        return { text: is5h ? 'Chu kỳ: 5 giờ (đầy đủ)' : (isWeekly ? 'Chu kỳ: 7 ngày (đầy đủ)' : ''), isExpired: false };
       }
       try {
         const d = new Date(resetTimeStr);
@@ -496,7 +507,7 @@ pub fn get_admin_ui_html() -> &'static str {
 
         if (diffMs <= 0) {
           return {
-            text: window === 'FIVE_HOUR' ? 'Đã hồi phục (100% - Chu kỳ 5h)' : 'Đã hồi phục (100%)',
+            text: is5h ? 'Đã hồi phục (100% - Chu kỳ 5h)' : (isWeekly ? 'Đã hồi phục (100% - Chu kỳ tuần)' : 'Đã hồi phục (100%)'),
             isExpired: true
           };
         }

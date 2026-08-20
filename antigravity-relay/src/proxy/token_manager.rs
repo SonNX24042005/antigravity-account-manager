@@ -99,17 +99,27 @@ impl TokenManager {
 
         let target_category = self.model_detector.get_effective_category();
 
-        let best = list
+        let eligible: Vec<Account> = list
+            .into_iter()
+            .filter(|a| {
+                !a.is_rate_limited()
+                    && a.has_available_weekly_quota_for_category(target_category)
+                    && a.get_effective_quota_for_category(target_category) > 0.0
+            })
+            .collect();
+
+        if eligible.is_empty() {
+            return Err(anyhow!(
+                "No eligible accounts available with remaining weekly quota for {}",
+                target_category.display_name()
+            ));
+        }
+
+        let best = eligible
             .into_iter()
             .max_by(|a, b| {
-                let score_a = match target_category {
-                    TargetModelCategory::Gemini => a.get_gemini_5h_quota(),
-                    TargetModelCategory::ClaudeAndGpt => a.get_claude_gpt_quota(),
-                };
-                let score_b = match target_category {
-                    TargetModelCategory::Gemini => b.get_gemini_5h_quota(),
-                    TargetModelCategory::ClaudeAndGpt => b.get_claude_gpt_quota(),
-                };
+                let score_a = a.get_effective_quota_for_category(target_category);
+                let score_b = b.get_effective_quota_for_category(target_category);
 
                 score_a
                     .partial_cmp(&score_b)
@@ -122,10 +132,7 @@ impl TokenManager {
             "[TokenManager] Auto-selected account {} for category {:?} (score: {:.1}%)",
             best.email,
             target_category,
-            match target_category {
-                TargetModelCategory::Gemini => best.get_gemini_5h_quota(),
-                TargetModelCategory::ClaudeAndGpt => best.get_claude_gpt_quota(),
-            }
+            best.get_effective_quota_for_category(target_category)
         );
 
         Ok((best, target_category))
@@ -188,15 +195,44 @@ impl TokenManager {
 
     pub async fn select_best_account(&self) -> Result<Account> {
         let list = self.accounts.read().await;
+        let target_category = self.model_detector.get_effective_category();
         let available: Vec<&Account> = list
             .iter()
-            .filter(|a| a.is_active && !a.is_rate_limited())
+            .filter(|a| {
+                a.is_active
+                    && !a.is_rate_limited()
+                    && a.has_available_weekly_quota_for_category(target_category)
+                    && a.get_effective_quota_for_category(target_category) > 0.0
+            })
             .collect();
 
         if available.is_empty() {
-            return Err(anyhow!(
-                "No active, non-rate-limited accounts available in pool!"
-            ));
+            let fallback: Vec<&Account> = list
+                .iter()
+                .filter(|a| {
+                    !a.is_rate_limited()
+                        && a.has_available_weekly_quota_for_category(target_category)
+                        && a.get_effective_quota_for_category(target_category) > 0.0
+                })
+                .collect();
+
+            if fallback.is_empty() {
+                return Err(anyhow!(
+                    "No active, non-rate-limited accounts with remaining weekly quota available in pool!"
+                ));
+            }
+
+            let best = fallback
+                .into_iter()
+                .max_by(|a, b| {
+                    let score_a = a.get_effective_quota_for_category(target_category);
+                    let score_b = b.get_effective_quota_for_category(target_category);
+                    score_a
+                        .partial_cmp(&score_b)
+                        .unwrap_or(std::cmp::Ordering::Equal)
+                })
+                .unwrap();
+            return Ok(best.clone());
         }
 
         if available.len() == 1 {
@@ -213,7 +249,10 @@ impl TokenManager {
         let choice1 = available[idx1];
         let choice2 = available[idx2];
 
-        if choice1.quota_percentage >= choice2.quota_percentage {
+        let score1 = choice1.get_effective_quota_for_category(target_category);
+        let score2 = choice2.get_effective_quota_for_category(target_category);
+
+        if score1 >= score2 {
             Ok(choice1.clone())
         } else {
             Ok(choice2.clone())
@@ -343,5 +382,108 @@ impl TokenManager {
                 let _ = crate::storage::AccountSwitcher::switch_active_account(&account);
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::models::account::{QuotaBucketInfo, QuotaGroupInfo};
+
+    #[tokio::test]
+    async fn test_select_best_account_skips_exhausted_weekly_quota() {
+        let dir = std::env::temp_dir().join(format!("agyr-tm-test-{}", uuid::Uuid::new_v4()));
+        let store = AccountStore::new(dir.clone());
+        let tm = TokenManager::new(store, dir.clone());
+
+        // Account 1: 100% 5h quota, but 0% weekly quota
+        let mut acc1 = Account::new(
+            "acc1@example.com".to_string(),
+            "tok1".to_string(),
+            "ref1".to_string(),
+            3600,
+        );
+        acc1.quota_groups = vec![QuotaGroupInfo {
+            name: "Gemini 2.5 Flash / Pro".to_string(),
+            buckets: vec![
+                QuotaBucketInfo {
+                    window: "FIVE_HOUR".to_string(),
+                    remaining_percentage: 100.0,
+                    reset_time: None,
+                },
+                QuotaBucketInfo {
+                    window: "WEEKLY".to_string(),
+                    remaining_percentage: 0.0,
+                    reset_time: None,
+                },
+            ],
+        }];
+
+        // Account 2: 70% 5h quota, 50% weekly quota
+        let mut acc2 = Account::new(
+            "acc2@example.com".to_string(),
+            "tok2".to_string(),
+            "ref2".to_string(),
+            3600,
+        );
+        acc2.quota_groups = vec![QuotaGroupInfo {
+            name: "Gemini 2.5 Flash / Pro".to_string(),
+            buckets: vec![
+                QuotaBucketInfo {
+                    window: "FIVE_HOUR".to_string(),
+                    remaining_percentage: 70.0,
+                    reset_time: None,
+                },
+                QuotaBucketInfo {
+                    window: "WEEKLY".to_string(),
+                    remaining_percentage: 50.0,
+                    reset_time: None,
+                },
+            ],
+        }];
+
+        tm.add_account(acc1).await.unwrap();
+        tm.add_account(acc2).await.unwrap();
+
+        let (best, _category) = tm.select_best_account_for_active_model().await.unwrap();
+        assert_eq!(best.email, "acc2@example.com");
+
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[tokio::test]
+    async fn test_select_best_account_fails_when_all_weekly_quotas_exhausted() {
+        let dir = std::env::temp_dir().join(format!("agyr-tm-test-{}", uuid::Uuid::new_v4()));
+        let store = AccountStore::new(dir.clone());
+        let tm = TokenManager::new(store, dir.clone());
+
+        let mut acc = Account::new(
+            "acc@example.com".to_string(),
+            "tok".to_string(),
+            "ref".to_string(),
+            3600,
+        );
+        acc.quota_groups = vec![QuotaGroupInfo {
+            name: "Gemini 2.5 Flash / Pro".to_string(),
+            buckets: vec![
+                QuotaBucketInfo {
+                    window: "FIVE_HOUR".to_string(),
+                    remaining_percentage: 100.0,
+                    reset_time: None,
+                },
+                QuotaBucketInfo {
+                    window: "WEEKLY".to_string(),
+                    remaining_percentage: 0.0,
+                    reset_time: None,
+                },
+            ],
+        }];
+
+        tm.add_account(acc).await.unwrap();
+
+        let res = tm.select_best_account_for_active_model().await;
+        assert!(res.is_err());
+
+        let _ = std::fs::remove_dir_all(dir);
     }
 }
